@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use fontdue::{Font, FontSettings};
+use rusty_config::Config;
 use rusty_core::Color;
 use rusty_mux::pane::Pane;
 use rusty_pty::{Pty, PtySize};
@@ -206,8 +207,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -232,16 +233,7 @@ impl Gpu {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &fv, resolve_target: None,
                     ops: wgpu::Operations {
-                        load:  wgpu::LoadOp::Clear({
-                            // Clear color must be linear for an sRGB surface.
-                            // sRGB #131313 ≈ linear 0.0049
-                            let srgb_to_linear = |v: u8| -> f64 {
-                                let s = v as f64 / 255.0;
-                                if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
-                            };
-                            let [r,g,b,_] = rusty_core::color::BG;
-                            wgpu::Color { r: srgb_to_linear(r), g: srgb_to_linear(g), b: srgb_to_linear(b), a: 1.0 }
-                        }),
+                        load:  wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -290,36 +282,39 @@ impl Selection {
 }
 
 struct App {
-    shell:     String,
-    font:      Font,
-    gpu:       Option<Gpu>,
-    window:    Option<Arc<Window>>,
-    pty:       Option<Pty>,
-    pane:      Option<Pane>,
-    font_px:   f32,
-    cell_w:    usize,
-    cell_h:    usize,
-    baseline:  usize,
-    modifiers: ModifiersState,
+    shell:      String,
+    config:     Config,
+    font:       Font,
+    gpu:        Option<Gpu>,
+    window:     Option<Arc<Window>>,
+    pty:        Option<Pty>,
+    pane:       Option<Pane>,
+    font_px:    f32,
+    cell_w:     usize,
+    cell_h:     usize,
+    baseline:   usize,
+    modifiers:  ModifiersState,
     selection:  Option<Selection>,
     selecting:  bool,
     cursor_pos: (f64, f64),
 }
 
 impl App {
-    fn new(shell: &str) -> Self {
+    fn new(shell: &str, config: Config) -> Self {
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("font");
+        let font_size = config.font.size;
         Self {
-            shell:     shell.to_owned(),
+            shell:      shell.to_owned(),
+            config,
             font,
-            gpu:       None,
-            window:    None,
-            pty:       None,
-            pane:      None,
-            font_px:   FONT_SIZE,
-            cell_w:    8,
-            cell_h:    16,
-            baseline:  13,
+            gpu:        None,
+            window:     None,
+            pty:        None,
+            pane:       None,
+            font_px:    font_size,
+            cell_w:     8,
+            cell_h:     16,
+            baseline:   13,
             modifiers:  ModifiersState::default(),
             selection:  None,
             selecting:  false,
@@ -368,7 +363,7 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
 
         let scale    = window.scale_factor() as f32;
-        self.font_px = FONT_SIZE * scale;
+        self.font_px = self.config.font.size * scale;
         (self.cell_w, self.cell_h, self.baseline) = measure_cell(&self.font, self.font_px);
         tracing::info!("scale={scale} font_px={} cell={}×{} baseline={}", self.font_px, self.cell_w, self.cell_h, self.baseline);
 
@@ -564,7 +559,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 if let (Some(gpu), Some(pane)) = (&mut self.gpu, &self.pane) {
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection);
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config);
                 }
             }
 
@@ -584,7 +579,7 @@ impl ApplicationHandler for App {
 pub struct TerminalWindow;
 
 impl TerminalWindow {
-    pub fn run(shell: &str) {
+    pub fn run(shell: &str, config: Config) {
         #[cfg(target_os = "macos")]
         let event_loop = {
             let mut builder = EventLoop::builder();
@@ -595,7 +590,7 @@ impl TerminalWindow {
         let event_loop = EventLoop::new().expect("event loop");
 
         event_loop.set_control_flow(ControlFlow::Poll);
-        let mut app = App::new(shell);
+        let mut app = App::new(shell, config);
         event_loop.run_app(&mut app).expect("event loop error");
     }
 }
@@ -629,9 +624,21 @@ fn paint_framebuf(
     fb_h:      usize,
     buf:       &mut [u8],
     selection: Option<Selection>,
+    config:    &Config,
 ) {
-    let bg_default = Color::Default.to_rgba(false);
-    buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&bg_default));
+    let palette  = &config.palette;
+    let ansi16   = palette.to_ansi16();
+    let cfg_bg   = palette.background.to_rgba();
+    let cfg_fg   = palette.foreground.to_rgba();
+    let cfg_cur  = palette.cursor.to_rgba();
+    let cfg_selbg = palette.selection_bg.to_rgba();
+    let cfg_selfg = palette.selection_fg.to_rgba();
+
+    let resolve = |color: Color, is_fg: bool| -> [u8; 4] {
+        color.resolve(is_fg, cfg_bg, cfg_fg, &ansi16)
+    };
+
+    buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&cfg_bg));
 
     let grid       = &pane.grid;
     let cursor     = pane.cursor;
@@ -649,11 +656,11 @@ fn paint_framebuf(
             let is_selected = selection.map_or(false, |s| s.contains(col, screen_row));
 
             let (fg, bg): ([u8; 4], [u8; 4]) = if is_cursor {
-                (rusty_core::color::BG, rusty_core::color::CURSOR)
+                (cfg_bg, cfg_cur)
             } else if is_selected {
-                (rusty_core::color::SEL_FG, rusty_core::color::SEL_BG)
+                (cfg_selfg, cfg_selbg)
             } else {
-                (cell.fg.to_rgba(true), cell.bg.to_rgba(false))
+                (resolve(cell.fg, true), resolve(cell.bg, false))
             };
 
             let px = col * cell_w;

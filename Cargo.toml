@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/rusty-config",
     "crates/rusty-core",
     "crates/rusty-pty",
     "crates/rusty-renderer",
@@ -34,3 +35,4 @@ tracing      = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bitflags            = "2"
 pollster            = "0.3"
+toml                = "0.8"

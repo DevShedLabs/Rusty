@@ -8,6 +8,7 @@ name = "rusty"
 path = "src/main.rs"
 
 [dependencies]
+rusty-config   = { path = "../rusty-config" }
 rusty-ui       = { path = "../rusty-ui" }
 rusty-mux      = { path = "../rusty-mux" }
 rusty-platform = { path = "../rusty-platform" }

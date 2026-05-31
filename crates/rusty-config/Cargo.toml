@@ -1,0 +1,10 @@
+[package]
+name    = "rusty-config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde    = { workspace = true }
+toml     = "0.8"
+anyhow   = { workspace = true }
+tracing  = { workspace = true }
