@@ -444,9 +444,10 @@ impl ApplicationHandler for App {
                     winit::event::MouseScrollDelta::PixelDelta(pos)   => pos.y as f32 / self.cell_h as f32,
                 };
                 // Overlay scroll takes priority.
-                if let Some((_, scroll)) = &mut self.overlay {
+                if let Some((doc, scroll)) = &mut self.overlay {
+                    let max_scroll = doc.lines.len().saturating_sub(1);
                     if lines > 0.0 { *scroll = scroll.saturating_sub(lines.ceil() as usize); }
-                    else           { *scroll += (-lines).ceil() as usize; }
+                    else           { *scroll = (*scroll + (-lines).ceil() as usize).min(max_scroll); }
                     return;
                 }
                 if let Some(pane) = &mut self.pane {
@@ -497,16 +498,17 @@ impl ApplicationHandler for App {
                 event: KeyEvent { logical_key, text, state: ElementState::Pressed, .. }, ..
             } => {
                 // Overlay takes priority — handle scroll/dismiss before shell input.
-                if let Some((_, scroll)) = &mut self.overlay {
+                if let Some((doc, scroll)) = &mut self.overlay {
+                    let max_scroll = doc.lines.len().saturating_sub(1);
                     match &logical_key {
                         Key::Named(NamedKey::Escape) |
                         Key::Named(NamedKey::Enter) => { self.overlay = None; return; }
                         Key::Character(s) if s.as_str() == "q" => { self.overlay = None; return; }
                         Key::Named(NamedKey::ArrowUp)   => { *scroll = scroll.saturating_sub(1); return; }
-                        Key::Named(NamedKey::ArrowDown) => { *scroll += 1; return; }
+                        Key::Named(NamedKey::ArrowDown) => { *scroll = (*scroll + 1).min(max_scroll); return; }
                         Key::Named(NamedKey::PageUp)    => { *scroll = scroll.saturating_sub(10); return; }
-                        Key::Named(NamedKey::PageDown)  => { *scroll += 10; return; }
-                        _ => { self.overlay = None; } // any other key dismisses and passes through
+                        Key::Named(NamedKey::PageDown)  => { *scroll = (*scroll + 10).min(max_scroll); return; }
+                        _ => { self.overlay = None; }
                     }
                 }
 
@@ -914,7 +916,7 @@ fn paint_framebuf(
         buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&panel_bg));
 
         let visible_rows = fb_h / cell_h;
-        let start_line   = scroll_off;
+        let start_line   = scroll_off.min(doc.lines.len().saturating_sub(1));
         let end_line     = (start_line + visible_rows).min(doc.lines.len());
 
         // Status bar at the top.
