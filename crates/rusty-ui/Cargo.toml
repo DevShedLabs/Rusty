@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 rusty-config      = { path = "../rusty-config" }
+rusty-render      = { path = "../rusty-render" }
 rusty-core        = { path = "../rusty-core" }
 rusty-renderer    = { path = "../rusty-renderer" }
 rusty-mux         = { path = "../rusty-mux" }

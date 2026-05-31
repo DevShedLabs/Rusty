@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use fontdue::{Font, FontSettings};
 use rusty_config::Config;
-use rusty_core::Color;
+use rusty_core::{Color, Grid};
 use rusty_hint::HintEngine;
+use rusty_render::{RenderDoc, RenderTrigger, detect_trigger};
 use rusty_mux::pane::Pane;
 use rusty_pty::{Pty, PtySize};
 use winit::{
@@ -208,8 +209,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize)>) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -311,6 +312,11 @@ struct App {
     pane:       Option<Pane>,
     hint:       HintEngine,
     popup:      Option<PopupState>,
+    pending_render:     Option<RenderTrigger>,
+    capture_buf:        Vec<u8>,
+    /// Instant of last PTY byte received while a render is pending.
+    capture_last_byte:  Option<std::time::Instant>,
+    overlay:            Option<(RenderDoc, usize)>,
     font_px:    f32,
     cell_w:     usize,
     cell_h:     usize,
@@ -334,7 +340,11 @@ impl App {
             pty:        None,
             pane:       None,
             hint:       HintEngine::new(),
-            popup:      None,
+            popup:          None,
+            pending_render:    None,
+            capture_buf:       Vec::new(),
+            capture_last_byte: None,
+            overlay:           None,
             font_px:    font_size,
             cell_w:     8,
             cell_h:     16,
@@ -433,6 +443,12 @@ impl ApplicationHandler for App {
                     winit::event::MouseScrollDelta::LineDelta(_, y)   => y as f32,
                     winit::event::MouseScrollDelta::PixelDelta(pos)   => pos.y as f32 / self.cell_h as f32,
                 };
+                // Overlay scroll takes priority.
+                if let Some((_, scroll)) = &mut self.overlay {
+                    if lines > 0.0 { *scroll = scroll.saturating_sub(lines.ceil() as usize); }
+                    else           { *scroll += (-lines).ceil() as usize; }
+                    return;
+                }
                 if let Some(pane) = &mut self.pane {
                     if lines > 0.0 {
                         pane.scroll_up_view(lines.ceil() as usize);
@@ -480,6 +496,20 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event: KeyEvent { logical_key, text, state: ElementState::Pressed, .. }, ..
             } => {
+                // Overlay takes priority — handle scroll/dismiss before shell input.
+                if let Some((_, scroll)) = &mut self.overlay {
+                    match &logical_key {
+                        Key::Named(NamedKey::Escape) |
+                        Key::Named(NamedKey::Enter) => { self.overlay = None; return; }
+                        Key::Character(s) if s.as_str() == "q" => { self.overlay = None; return; }
+                        Key::Named(NamedKey::ArrowUp)   => { *scroll = scroll.saturating_sub(1); return; }
+                        Key::Named(NamedKey::ArrowDown) => { *scroll += 1; return; }
+                        Key::Named(NamedKey::PageUp)    => { *scroll = scroll.saturating_sub(10); return; }
+                        Key::Named(NamedKey::PageDown)  => { *scroll += 10; return; }
+                        _ => { self.overlay = None; } // any other key dismisses and passes through
+                    }
+                }
+
                 let ctrl = self.modifiers.control_key();
                 let cmd  = self.modifiers.super_key(); // Cmd on macOS
 
@@ -583,6 +613,22 @@ impl ApplicationHandler for App {
                         // Update line buffer for hint tracking.
                         match s {
                             "\r" | "\n" => {
+                                // Read the current input line directly from the grid —
+                                // this works for typed input AND history recalled with ↑.
+                                let grid_line = self.pane.as_ref()
+                                    .map(|p| read_cursor_row(&p.grid, p.cursor.row))
+                                    .unwrap_or_default();
+                                let check_line = if grid_line.trim().is_empty() {
+                                    &self.hint.line
+                                } else {
+                                    &grid_line
+                                };
+                                if let Some(trigger) = detect_trigger(check_line) {
+                                    self.pending_render    = Some(trigger);
+                                    self.capture_buf       = Vec::new();
+                                    self.capture_last_byte = None;
+                                    self.overlay           = None;
+                                }
                                 self.hint.commit();
                             }
                             "\x7f" => {
@@ -610,7 +656,20 @@ impl ApplicationHandler for App {
 
                     // Named keys with no text representation.
                     let bytes: Option<Vec<u8>> = match &logical_key {
-                        Key::Named(NamedKey::Enter)        => { self.hint.commit(); Some(b"\r".to_vec()) }
+                        Key::Named(NamedKey::Enter)        => {
+                            let grid_line = self.pane.as_ref()
+                                .map(|p| read_cursor_row(&p.grid, p.cursor.row))
+                                .unwrap_or_default();
+                            let check_line = if grid_line.trim().is_empty() { self.hint.line.clone() } else { grid_line };
+                            if let Some(trigger) = detect_trigger(&check_line) {
+                                self.pending_render    = Some(trigger);
+                                self.capture_buf       = Vec::new();
+                                self.capture_last_byte = None;
+                                self.overlay           = None;
+                            }
+                            self.hint.commit();
+                            Some(b"\r".to_vec())
+                        }
                         Key::Named(NamedKey::Backspace)    => {
                             let mut line = self.hint.line.clone();
                             line.pop();
@@ -669,13 +728,34 @@ impl ApplicationHandler for App {
                                 }
                             }
                         }
+                        if self.pending_render.is_some() {
+                            self.capture_buf.extend_from_slice(&bytes);
+                            self.capture_last_byte = Some(std::time::Instant::now());
+                        }
+                    }
+
+                    // Finalise render after 200 ms of PTY silence (command done outputting).
+                    if self.pending_render.is_some() {
+                        let idle = self.capture_last_byte
+                            .map(|t| t.elapsed().as_millis() >= 200)
+                            .unwrap_or(false);
+                        if idle {
+                            let trigger = self.pending_render.take().unwrap();
+                            let raw = String::from_utf8_lossy(&self.capture_buf).into_owned();
+                            tracing::info!("render finalised: {:?}, {} bytes", trigger, raw.len());
+                            let doc = build_render_doc(&trigger, &raw, pane.grid.width);
+                            self.overlay = Some((doc, 0));
+                            self.capture_buf.clear();
+                            self.capture_last_byte = None;
+                        }
                     }
                 }
                 if let (Some(gpu), Some(pane)) = (&mut self.gpu, &self.pane) {
                     let ghost = self.hint.hint()
                         .map(|h| h.ghost(&self.hint.line).to_owned())
                         .unwrap_or_default();
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config, &ghost, self.popup.as_ref());
+                    let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll));
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
                 }
             }
 
@@ -713,6 +793,81 @@ impl TerminalWindow {
 
 // ── software rasterizer ───────────────────────────────────────────────────────
 
+/// Read a row from the grid as a trimmed string.
+fn read_cursor_row(grid: &Grid, row: usize) -> String {
+    if row >= grid.height { return String::new(); }
+    let mut s: String = (0..grid.width)
+        .map(|col| grid.get(col, row).ch)
+        .collect();
+    // Trim trailing spaces — the grid pads all cells with spaces.
+    s.truncate(s.trim_end().len());
+    s
+}
+
+fn rasterize_glyph(ch: char, px: usize, py: usize, fg: [u8;4], bg: [u8;4], baseline: usize, font: &Font, font_px: f32, fb_w: usize, fb_h: usize, buf: &mut [u8]) {
+    let (m, bitmap) = font.rasterize(ch, font_px);
+    if m.width == 0 || m.height == 0 { return; }
+    let gx = px as i32 + m.xmin;
+    let gy = py as i32 + baseline as i32 - m.height as i32 - m.ymin;
+    for by in 0..m.height {
+        let y = gy + by as i32;
+        if y < 0 || y as usize >= fb_h { continue; }
+        let rb = y as usize * fb_w;
+        for bx in 0..m.width {
+            let a = bitmap[by * m.width + bx];
+            if a == 0 { continue; }
+            let x = gx + bx as i32;
+            if x < 0 || x as usize >= fb_w { continue; }
+            let i   = (rb + x as usize) * 4;
+            let a32 = a as u32;
+            let blend = |f: u8, b: u8| -> u8 { ((f as u32 * a32 + b as u32 * (255 - a32)) / 255) as u8 };
+            buf[i]     = blend(fg[0], bg[0]);
+            buf[i + 1] = blend(fg[1], bg[1]);
+            buf[i + 2] = blend(fg[2], bg[2]);
+            buf[i + 3] = 0xff;
+        }
+    }
+}
+
+fn render_text_row(text: &str, row: usize, cell_h: usize, cell_w: usize, baseline: usize, font: &Font, font_px: f32, fb_w: usize, fb_h: usize, buf: &mut [u8], fg: [u8;4], bg: [u8;4]) {
+    let py = row * cell_h;
+    let mut px = 0usize;
+    for ch in text.chars() {
+        if px + cell_w > fb_w { break; }
+        if ch != ' ' {
+            rasterize_glyph(ch, px, py, fg, bg, baseline, font, font_px, fb_w, fb_h, buf);
+        }
+        px += cell_w;
+    }
+}
+
+fn build_render_doc(trigger: &RenderTrigger, raw: &str, width: usize) -> RenderDoc {
+    // Strip ANSI escape sequences from raw PTY output before parsing.
+    let clean = strip_ansi(raw);
+    match trigger {
+        RenderTrigger::Markdown => rusty_render::markdown::render(&clean, width),
+        RenderTrigger::Json     => rusty_render::json::render(&clean, width),
+    }
+}
+
+/// Remove ANSI escape sequences from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut out   = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            match chars.next() {
+                Some('[') => { for c in chars.by_ref() { if c.is_ascii_alphabetic() { break; } } }
+                Some(']') => { for c in chars.by_ref() { if c == '\x07' || c == '\x1b' { break; } } }
+                _         => {}
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 fn copy_to_clipboard(text: &str) {
     use std::process::{Command, Stdio};
     use std::io::Write;
@@ -743,14 +898,72 @@ fn paint_framebuf(
     config:    &Config,
     ghost:     &str,
     popup:     Option<&PopupState>,
+    overlay:   Option<(&RenderDoc, usize)>,
 ) {
-    let palette  = &config.palette;
-    let ansi16   = palette.to_ansi16();
-    let cfg_bg   = palette.background.to_rgba();
-    let cfg_fg   = palette.foreground.to_rgba();
-    let cfg_cur  = palette.cursor.to_rgba();
+    let palette   = &config.palette;
+    let ansi16    = palette.to_ansi16();
+    let cfg_bg    = palette.background.to_rgba();
+    let cfg_fg    = palette.foreground.to_rgba();
+    let cfg_cur   = palette.cursor.to_rgba();
     let cfg_selbg = palette.selection_bg.to_rgba();
     let cfg_selfg = palette.selection_fg.to_rgba();
+
+    // ── Overlay rendering (replaces normal terminal view) ─────────────────────
+    if let Some((doc, scroll_off)) = overlay {
+        let panel_bg: [u8; 4] = [0x1a, 0x1a, 0x2a, 0xff];
+        buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&panel_bg));
+
+        let visible_rows = fb_h / cell_h;
+        let start_line   = scroll_off;
+        let end_line     = (start_line + visible_rows).min(doc.lines.len());
+
+        // Status bar at the top.
+        let status_bg: [u8; 4] = [0x26, 0x26, 0x40, 0xff];
+        let status_fg: [u8; 4] = [0x88, 0x88, 0xaa, 0xff];
+        for dy in 0..cell_h {
+            for dx in 0..fb_w {
+                let i = (dy * fb_w + dx) * 4;
+                buf[i..i + 4].copy_from_slice(&status_bg);
+            }
+        }
+        let status_text = format!("  ↑↓ scroll  q/Esc dismiss   line {}/{}", start_line + 1, doc.lines.len());
+        render_text_row(&status_text, 0, cell_h, cell_w, baseline, font, font_px, fb_w, fb_h, buf, status_fg, status_bg);
+
+        // Content lines.
+        for (i, line) in doc.lines[start_line..end_line].iter().enumerate() {
+            let screen_row = i + 1; // row 0 is status bar
+            let py = screen_row * cell_h;
+            if py >= fb_h { break; }
+
+            let mut px = cell_w; // 1-cell left margin
+            for span in line {
+                let fg = span.style.fg.map(|c| c.to_rgba()).unwrap_or(cfg_fg);
+                let bg = span.style.bg.map(|c| c.to_rgba()).unwrap_or(panel_bg);
+
+                // Fill span background.
+                let span_w = span.text.chars().count() * cell_w;
+                for dy in 0..cell_h {
+                    let y = py + dy;
+                    if y >= fb_h { break; }
+                    for dx in 0..span_w {
+                        let x = px + dx;
+                        if x >= fb_w { break; }
+                        let i = (y * fb_w + x) * 4;
+                        buf[i..i + 4].copy_from_slice(&bg);
+                    }
+                }
+
+                for ch in span.text.chars() {
+                    if px + cell_w > fb_w { break; }
+                    if ch != ' ' {
+                        rasterize_glyph(ch, px, py, fg, bg, baseline, font, font_px, fb_w, fb_h, buf);
+                    }
+                    px += cell_w;
+                }
+            }
+        }
+        return; // don't draw normal terminal content
+    }
 
     let resolve = |color: Color, is_fg: bool| -> [u8; 4] {
         color.resolve(is_fg, cfg_bg, cfg_fg, &ansi16)

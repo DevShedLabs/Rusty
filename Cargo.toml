@@ -8,6 +8,7 @@ members = [
     "crates/rusty-mux",
     "crates/rusty-git",
     "crates/rusty-hint",
+    "crates/rusty-render",
     "crates/rusty-platform",
     "crates/rusty-ui",
     "crates/rusty-app",
