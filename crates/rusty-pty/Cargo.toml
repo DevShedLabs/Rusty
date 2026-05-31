@@ -1,0 +1,12 @@
+[package]
+name    = "rusty-pty"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+portable-pty = { workspace = true }
+nix          = { workspace = true }
+anyhow       = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+tokio        = { workspace = true }

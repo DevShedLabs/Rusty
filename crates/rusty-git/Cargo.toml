@@ -1,0 +1,12 @@
+[package]
+name    = "rusty-git"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+git2      = { workspace = true }
+serde     = { workspace = true }
+anyhow    = { workspace = true }
+thiserror = { workspace = true }
+tracing   = { workspace = true }
+tokio     = { workspace = true }

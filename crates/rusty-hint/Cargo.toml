@@ -1,0 +1,10 @@
+[package]
+name    = "rusty-hint"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rusty-core = { path = "../rusty-core" }
+anyhow     = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }

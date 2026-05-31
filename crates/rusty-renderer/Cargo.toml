@@ -1,0 +1,12 @@
+[package]
+name    = "rusty-renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rusty-core = { path = "../rusty-core" }
+wgpu       = { workspace = true }
+fontdue    = { workspace = true }
+swash      = { workspace = true }
+anyhow     = { workspace = true }
+tracing    = { workspace = true }

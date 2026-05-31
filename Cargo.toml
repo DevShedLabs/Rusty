@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rusty-core",
+    "crates/rusty-pty",
+    "crates/rusty-renderer",
+    "crates/rusty-mux",
+    "crates/rusty-git",
+    "crates/rusty-hint",
+    "crates/rusty-platform",
+    "crates/rusty-ui",
+    "crates/rusty-app",
+]
+
+# Shared dependency versions — override per-crate only when necessary.
+[workspace.dependencies]
+tokio        = { version = "1", features = ["full"] }
+crossbeam-channel = "0.5"
+portable-pty = "0.8"
+vte          = "0.13"
+wgpu         = "0.20"
+winit        = "0.29"
+fontdue      = "0.8"
+swash        = "0.1"
+nix          = { version = "0.28", features = ["signal", "process", "fs"] }
+git2         = "0.19"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+anyhow       = "1"
+thiserror    = "1"
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+bitflags            = "2"

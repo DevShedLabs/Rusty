@@ -1,0 +1,18 @@
+use tracing_subscriber::EnvFilter;
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    tracing::info!("rusty starting");
+
+    // Boot order matches Spec.md §MVP:
+    // 1. Spawn PTY
+    // 2. Create session (mux)
+    // 3. Start render loop (UI)
+
+    rusty_ui::window::TerminalWindow::run();
+
+    Ok(())
+}

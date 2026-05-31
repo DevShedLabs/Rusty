@@ -1,0 +1,17 @@
+[package]
+name    = "rusty-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rusty"
+path = "src/main.rs"
+
+[dependencies]
+rusty-ui       = { path = "../rusty-ui" }
+rusty-mux      = { path = "../rusty-mux" }
+rusty-platform = { path = "../rusty-platform" }
+tokio          = { workspace = true }
+tracing        = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow         = { workspace = true }
