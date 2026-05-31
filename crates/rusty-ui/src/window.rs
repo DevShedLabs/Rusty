@@ -209,7 +209,7 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize)>) {
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize, Option<(usize,usize)>)>) {
         paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay);
 
         self.queue.write_texture(
@@ -317,6 +317,9 @@ struct App {
     /// Instant of last PTY byte received while a render is pending.
     capture_last_byte:  Option<std::time::Instant>,
     overlay:            Option<(RenderDoc, usize)>,
+    /// Selected row range within the overlay (start_row, end_row), inclusive.
+    overlay_sel:        Option<(usize, usize)>,
+    overlay_sel_start:  Option<usize>, // row where mouse-down started
     font_px:    f32,
     cell_w:     usize,
     cell_h:     usize,
@@ -341,10 +344,12 @@ impl App {
             pane:       None,
             hint:       HintEngine::new(),
             popup:          None,
-            pending_render:    None,
-            capture_buf:       Vec::new(),
-            capture_last_byte: None,
-            overlay:           None,
+            pending_render:     None,
+            capture_buf:        Vec::new(),
+            capture_last_byte:  None,
+            overlay:            None,
+            overlay_sel:        None,
+            overlay_sel_start:  None,
             font_px:    font_size,
             cell_w:     8,
             cell_h:     16,
@@ -466,7 +471,17 @@ impl ApplicationHandler for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = (position.x, position.y);
-                if self.selecting {
+                if self.overlay.is_some() {
+                    // Track selection row within the overlay (row 0 = status bar, skip it).
+                    if self.overlay_sel_start.is_some() {
+                        let screen_row = (position.y as usize / self.cell_h).saturating_sub(1);
+                        if let Some(start) = self.overlay_sel_start {
+                            let lo = start.min(screen_row);
+                            let hi = start.max(screen_row);
+                            self.overlay_sel = Some((lo, hi));
+                        }
+                    }
+                } else if self.selecting {
                     let cell = self.pixel_to_cell(position.x, position.y);
                     if let Some(sel) = &mut self.selection {
                         sel.end = cell;
@@ -475,19 +490,31 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. } => {
-                match state {
-                    ElementState::Pressed => {
-                        self.selecting = true;
-                        self.selection = None;
-                        let cell = self.pixel_to_cell(self.cursor_pos.0, self.cursor_pos.1);
-                        self.selection = Some(Selection { start: cell, end: cell });
+                if self.overlay.is_some() {
+                    match state {
+                        ElementState::Pressed => {
+                            let screen_row = (self.cursor_pos.1 as usize / self.cell_h).saturating_sub(1);
+                            self.overlay_sel_start = Some(screen_row);
+                            self.overlay_sel = Some((screen_row, screen_row));
+                        }
+                        ElementState::Released => {
+                            self.overlay_sel_start = None;
+                        }
                     }
-                    ElementState::Released => {
-                        self.selecting = false;
-                        // Discard single-cell (click without drag).
-                        if let Some(sel) = &self.selection {
-                            if sel.start == sel.end {
-                                self.selection = None;
+                } else {
+                    match state {
+                        ElementState::Pressed => {
+                            self.selecting = true;
+                            self.selection = None;
+                            let cell = self.pixel_to_cell(self.cursor_pos.0, self.cursor_pos.1);
+                            self.selection = Some(Selection { start: cell, end: cell });
+                        }
+                        ElementState::Released => {
+                            self.selecting = false;
+                            if let Some(sel) = &self.selection {
+                                if sel.start == sel.end {
+                                    self.selection = None;
+                                }
                             }
                         }
                     }
@@ -500,15 +527,36 @@ impl ApplicationHandler for App {
                 // Overlay takes priority — handle scroll/dismiss before shell input.
                 if let Some((doc, scroll)) = &mut self.overlay {
                     let max_scroll = doc.lines.len().saturating_sub(1);
+                    let cmd = self.modifiers.super_key();
                     match &logical_key {
                         Key::Named(NamedKey::Escape) |
-                        Key::Named(NamedKey::Enter) => { self.overlay = None; return; }
-                        Key::Character(s) if s.as_str() == "q" => { self.overlay = None; return; }
-                        Key::Named(NamedKey::ArrowUp)   => { *scroll = scroll.saturating_sub(1); return; }
-                        Key::Named(NamedKey::ArrowDown) => { *scroll = (*scroll + 1).min(max_scroll); return; }
-                        Key::Named(NamedKey::PageUp)    => { *scroll = scroll.saturating_sub(10); return; }
-                        Key::Named(NamedKey::PageDown)  => { *scroll = (*scroll + 10).min(max_scroll); return; }
-                        _ => { self.overlay = None; }
+                        Key::Named(NamedKey::Enter) => {
+                            self.overlay = None;
+                            self.overlay_sel = None;
+                            return;
+                        }
+                        Key::Character(s) if s.as_str() == "q" => {
+                            self.overlay = None;
+                            self.overlay_sel = None;
+                            return;
+                        }
+                        Key::Character(s) if s.as_str() == "c" && cmd => {
+                            // Cmd+C — copy selected overlay text, or whole doc if no selection.
+                            let text = overlay_selected_text(doc, *scroll, self.overlay_sel);
+                            copy_to_clipboard(&text);
+                            return;
+                        }
+                        Key::Named(NamedKey::ArrowUp)    => { *scroll = scroll.saturating_sub(1); return; }
+                        Key::Named(NamedKey::ArrowDown)  => { *scroll = (*scroll + 1).min(max_scroll); return; }
+                        Key::Named(NamedKey::PageUp)     => { *scroll = scroll.saturating_sub(10); return; }
+                        Key::Named(NamedKey::PageDown)   => { *scroll = (*scroll + 10).min(max_scroll); return; }
+                        // Modifier-only keypresses — don't dismiss.
+                        Key::Named(
+                            NamedKey::Super | NamedKey::Shift | NamedKey::Control | NamedKey::Alt |
+                            NamedKey::CapsLock | NamedKey::Meta
+                        ) => { return; }
+                        // Any other key dismisses.
+                        _ => { self.overlay = None; self.overlay_sel = None; }
                     }
                 }
 
@@ -756,7 +804,7 @@ impl ApplicationHandler for App {
                     let ghost = self.hint.hint()
                         .map(|h| h.ghost(&self.hint.line).to_owned())
                         .unwrap_or_default();
-                    let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll));
+                    let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll, self.overlay_sel));
                     gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
                 }
             }
@@ -804,6 +852,22 @@ fn read_cursor_row(grid: &Grid, row: usize) -> String {
     // Trim trailing spaces — the grid pads all cells with spaces.
     s.truncate(s.trim_end().len());
     s
+}
+
+/// Extract text from RenderDoc lines for the selected row range (screen-relative).
+/// If no selection, returns all visible text.
+fn overlay_selected_text(doc: &RenderDoc, scroll: usize, sel: Option<(usize, usize)>) -> String {
+    let (lo, hi) = sel.unwrap_or((0, doc.lines.len().saturating_sub(1)));
+    let doc_lo = (scroll + lo).min(doc.lines.len());
+    let doc_hi = (scroll + hi + 1).min(doc.lines.len());
+    doc.lines[doc_lo..doc_hi]
+        .iter()
+        .map(|spans| {
+            let line: String = spans.iter().map(|s| s.text.as_str()).collect();
+            line.trim_end().to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn rasterize_glyph(ch: char, px: usize, py: usize, fg: [u8;4], bg: [u8;4], baseline: usize, font: &Font, font_px: f32, fb_w: usize, fb_h: usize, buf: &mut [u8]) {
@@ -900,7 +964,7 @@ fn paint_framebuf(
     config:    &Config,
     ghost:     &str,
     popup:     Option<&PopupState>,
-    overlay:   Option<(&RenderDoc, usize)>,
+    overlay:   Option<(&RenderDoc, usize, Option<(usize,usize)>)>,
 ) {
     let palette   = &config.palette;
     let ansi16    = palette.to_ansi16();
@@ -911,7 +975,7 @@ fn paint_framebuf(
     let cfg_selfg = palette.selection_fg.to_rgba();
 
     // ── Overlay rendering (replaces normal terminal view) ─────────────────────
-    if let Some((doc, scroll_off)) = overlay {
+    if let Some((doc, scroll_off, overlay_sel)) = overlay {
         let panel_bg: [u8; 4] = [0x1a, 0x1a, 0x2a, 0xff];
         buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&panel_bg));
 
@@ -928,8 +992,13 @@ fn paint_framebuf(
                 buf[i..i + 4].copy_from_slice(&status_bg);
             }
         }
-        let status_text = format!("  ↑↓ scroll  q/Esc dismiss   line {}/{}", start_line + 1, doc.lines.len());
+        let sel_hint = if overlay_sel.is_some() { "  Cmd+C copy" } else { "" };
+        let status_text = format!("  ↑↓ scroll  q/Esc dismiss   line {}/{}{}",
+            start_line + 1, doc.lines.len(), sel_hint);
         render_text_row(&status_text, 0, cell_h, cell_w, baseline, font, font_px, fb_w, fb_h, buf, status_fg, status_bg);
+
+        let sel_bg: [u8; 4] = [0x26, 0x4f, 0x78, 0xff];
+        let sel_fg: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
 
         // Content lines.
         for (i, line) in doc.lines[start_line..end_line].iter().enumerate() {
@@ -937,10 +1006,14 @@ fn paint_framebuf(
             let py = screen_row * cell_h;
             if py >= fb_h { break; }
 
+            let is_selected = overlay_sel
+                .map(|(lo, hi)| i >= lo && i <= hi)
+                .unwrap_or(false);
+
             let mut px = cell_w; // 1-cell left margin
             for span in line {
-                let fg = span.style.fg.map(|c| c.to_rgba()).unwrap_or(cfg_fg);
-                let bg = span.style.bg.map(|c| c.to_rgba()).unwrap_or(panel_bg);
+                let fg = if is_selected { sel_fg } else { span.style.fg.map(|c| c.to_rgba()).unwrap_or(cfg_fg) };
+                let bg = if is_selected { sel_bg } else { span.style.bg.map(|c| c.to_rgba()).unwrap_or(panel_bg) };
 
                 // Fill span background.
                 let span_w = span.text.chars().count() * cell_w;
