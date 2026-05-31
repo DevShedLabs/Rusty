@@ -4,7 +4,7 @@ use fontdue::{Font, FontSettings};
 use rusty_config::Config;
 use rusty_core::{Color, Grid};
 use rusty_hint::HintEngine;
-use rusty_render::{RenderDoc, RenderTrigger, detect_trigger};
+use rusty_render::{RenderDoc, RenderTrigger, detect_trigger, trigger::{strip_trailing_prompt, strip_trailing_prompt_json}};
 use rusty_mux::pane::Pane;
 use rusty_pty::{Pty, PtySize};
 use winit::{
@@ -75,8 +75,8 @@ struct Gpu {
     sampler:      wgpu::Sampler,
     screen_tex:   wgpu::Texture,
     bind_group:   wgpu::BindGroup,
-    fb_w:         usize,
-    fb_h:         usize,
+    pub fb_w:     usize,
+    pub fb_h:     usize,
     framebuf:     Vec<u8>,
 }
 
@@ -471,8 +471,10 @@ impl ApplicationHandler for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = (position.x, position.y);
+                let fb_h = self.gpu.as_ref().map(|g| g.fb_h).unwrap_or(1);
+                let scroll_zone = self.cell_h * 2; // 2-row trigger zone at edges
+
                 if self.overlay.is_some() {
-                    // Track selection row within the overlay (row 0 = status bar, skip it).
                     if self.overlay_sel_start.is_some() {
                         let screen_row = (position.y as usize / self.cell_h).saturating_sub(1);
                         if let Some(start) = self.overlay_sel_start {
@@ -480,11 +482,28 @@ impl ApplicationHandler for App {
                             let hi = start.max(screen_row);
                             self.overlay_sel = Some((lo, hi));
                         }
+                        // Auto-scroll overlay when dragging near top/bottom edge.
+                        if let Some((doc, scroll)) = &mut self.overlay {
+                            let max_scroll = doc.lines.len().saturating_sub(1);
+                            if position.y as usize <= scroll_zone + self.cell_h {
+                                *scroll = scroll.saturating_sub(1);
+                            } else if position.y as usize >= fb_h.saturating_sub(scroll_zone) {
+                                *scroll = (*scroll + 1).min(max_scroll);
+                            }
+                        }
                     }
                 } else if self.selecting {
                     let cell = self.pixel_to_cell(position.x, position.y);
                     if let Some(sel) = &mut self.selection {
                         sel.end = cell;
+                    }
+                    // Auto-scroll terminal when dragging near top/bottom edge.
+                    if let Some(pane) = &mut self.pane {
+                        if position.y as usize <= scroll_zone {
+                            pane.scroll_up_view(1);
+                        } else if position.y as usize >= fb_h.saturating_sub(scroll_zone) {
+                            pane.scroll_down_view(1);
+                        }
                     }
                 }
             }
@@ -908,11 +927,10 @@ fn render_text_row(text: &str, row: usize, cell_h: usize, cell_w: usize, baselin
 }
 
 fn build_render_doc(trigger: &RenderTrigger, raw: &str, width: usize) -> RenderDoc {
-    // Strip ANSI escape sequences from raw PTY output before parsing.
     let clean = strip_ansi(raw);
     match trigger {
-        RenderTrigger::Markdown => rusty_render::markdown::render(&clean, width),
-        RenderTrigger::Json     => rusty_render::json::render(&clean, width),
+        RenderTrigger::Markdown => rusty_render::markdown::render(strip_trailing_prompt(&clean), width),
+        RenderTrigger::Json     => rusty_render::json::render(strip_trailing_prompt_json(&clean), width),
     }
 }
 
