@@ -21,7 +21,7 @@ vte          = "0.13"
 # Metal backend only — we target macOS/Apple Silicon exclusively for now.
 # Disable Vulkan/GL/DX12 to cut compile time and binary size.
 wgpu         = { version = "0.20", default-features = false, features = ["metal", "wgsl"] }
-winit        = "0.29"
+winit        = "0.30"
 fontdue      = "0.8"
 swash        = "0.1"
 nix          = { version = "0.28", features = ["signal", "process", "fs"] }
