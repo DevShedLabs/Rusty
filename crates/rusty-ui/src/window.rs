@@ -8,7 +8,7 @@ use winit::{
     application::ApplicationHandler,
     event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
+    keyboard::{Key, ModifiersState, NamedKey},
     window::{Window, WindowAttributes, WindowId},
 };
 #[cfg(target_os = "macos")]
@@ -252,32 +252,34 @@ impl Gpu {
 // ── application ───────────────────────────────────────────────────────────────
 
 struct App {
-    shell:    String,
-    font:     Font,
-    gpu:      Option<Gpu>,
-    window:   Option<Arc<Window>>,
-    pty:      Option<Pty>,
-    pane:     Option<Pane>,
-    font_px:  f32,
-    cell_w:   usize,
-    cell_h:   usize,
-    baseline: usize,
+    shell:     String,
+    font:      Font,
+    gpu:       Option<Gpu>,
+    window:    Option<Arc<Window>>,
+    pty:       Option<Pty>,
+    pane:      Option<Pane>,
+    font_px:   f32,
+    cell_w:    usize,
+    cell_h:    usize,
+    baseline:  usize,
+    modifiers: ModifiersState,
 }
 
 impl App {
     fn new(shell: &str) -> Self {
-        let font    = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("font");
+        let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("font");
         Self {
-            shell:    shell.to_owned(),
+            shell:     shell.to_owned(),
             font,
-            gpu:      None,
-            window:   None,
-            pty:      None,
-            pane:     None,
-            font_px:  FONT_SIZE, // updated in resumed() once we have scale factor
-            cell_w:   8,
-            cell_h:   16,
-            baseline: 13,
+            gpu:       None,
+            window:    None,
+            pty:       None,
+            pane:      None,
+            font_px:   FONT_SIZE,
+            cell_w:    8,
+            cell_h:    16,
+            baseline:  13,
+            modifiers: ModifiersState::default(),
         }
     }
 }
@@ -328,21 +330,75 @@ impl ApplicationHandler for App {
                 }
             }
 
+            WindowEvent::ModifiersChanged(mods) => {
+                self.modifiers = mods.state();
+            }
+
+
             WindowEvent::KeyboardInput {
-                event: KeyEvent { logical_key, state: ElementState::Pressed, .. }, ..
+                event: KeyEvent { logical_key, text, state: ElementState::Pressed, .. }, ..
             } => {
-                let bytes: Option<Vec<u8>> = match &logical_key {
-                    Key::Character(s)                => Some(s.as_str().as_bytes().to_vec()),
-                    Key::Named(NamedKey::Enter)      => Some(b"\r".to_vec()),
-                    Key::Named(NamedKey::Backspace)  => Some(b"\x7f".to_vec()),
-                    Key::Named(NamedKey::Escape)     => Some(b"\x1b".to_vec()),
-                    Key::Named(NamedKey::Tab)        => Some(b"\t".to_vec()),
-                    Key::Named(NamedKey::ArrowUp)    => Some(b"\x1b[A".to_vec()),
-                    Key::Named(NamedKey::ArrowDown)  => Some(b"\x1b[B".to_vec()),
-                    Key::Named(NamedKey::ArrowRight) => Some(b"\x1b[C".to_vec()),
-                    Key::Named(NamedKey::ArrowLeft)  => Some(b"\x1b[D".to_vec()),
-                    _ => None,
+                let ctrl = self.modifiers.control_key();
+
+                let bytes: Option<Vec<u8>> = if ctrl {
+                    // Ctrl+key → control byte. Use logical_key so layout doesn't matter.
+                    match &logical_key {
+                        Key::Character(s) => {
+                            let ch = s.as_str().chars().next().unwrap_or('\0').to_ascii_uppercase();
+                            if ('A'..='Z').contains(&ch) {
+                                Some(vec![ch as u8 - b'A' + 1])
+                            } else {
+                                match ch {
+                                    '[' => Some(b"\x1b".to_vec()),  // Ctrl-[ = ESC
+                                    '\\' => Some(b"\x1c".to_vec()),
+                                    ']' => Some(b"\x1d".to_vec()),
+                                    '^' => Some(b"\x1e".to_vec()),
+                                    '_' => Some(b"\x1f".to_vec()),
+                                    ' ' => Some(b"\x00".to_vec()),  // Ctrl-Space = NUL
+                                    _ => None,
+                                }
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    // No ctrl — use the OS-composed text first (handles layout, shift, option).
+                    // Fall through to logical_key for named keys that produce no text.
+                    if let Some(t) = &text {
+                        Some(t.as_str().as_bytes().to_vec())
+                    } else {
+                        match &logical_key {
+                            Key::Named(NamedKey::Enter)        => Some(b"\r".to_vec()),
+                            Key::Named(NamedKey::Backspace)    => Some(b"\x7f".to_vec()),
+                            Key::Named(NamedKey::Escape)       => Some(b"\x1b".to_vec()),
+                            Key::Named(NamedKey::Tab)          => Some(b"\t".to_vec()),
+                            Key::Named(NamedKey::ArrowUp)      => Some(b"\x1b[A".to_vec()),
+                            Key::Named(NamedKey::ArrowDown)    => Some(b"\x1b[B".to_vec()),
+                            Key::Named(NamedKey::ArrowRight)   => Some(b"\x1b[C".to_vec()),
+                            Key::Named(NamedKey::ArrowLeft)    => Some(b"\x1b[D".to_vec()),
+                            Key::Named(NamedKey::Home)         => Some(b"\x1b[H".to_vec()),
+                            Key::Named(NamedKey::End)          => Some(b"\x1b[F".to_vec()),
+                            Key::Named(NamedKey::PageUp)       => Some(b"\x1b[5~".to_vec()),
+                            Key::Named(NamedKey::PageDown)     => Some(b"\x1b[6~".to_vec()),
+                            Key::Named(NamedKey::Insert)       => Some(b"\x1b[2~".to_vec()),
+                            Key::Named(NamedKey::Delete)       => Some(b"\x1b[3~".to_vec()),
+                            Key::Named(NamedKey::F1)           => Some(b"\x1bOP".to_vec()),
+                            Key::Named(NamedKey::F2)           => Some(b"\x1bOQ".to_vec()),
+                            Key::Named(NamedKey::F3)           => Some(b"\x1bOR".to_vec()),
+                            Key::Named(NamedKey::F4)           => Some(b"\x1bOS".to_vec()),
+                            Key::Named(NamedKey::F5)           => Some(b"\x1b[15~".to_vec()),
+                            Key::Named(NamedKey::F6)           => Some(b"\x1b[17~".to_vec()),
+                            Key::Named(NamedKey::F7)           => Some(b"\x1b[18~".to_vec()),
+                            Key::Named(NamedKey::F8)           => Some(b"\x1b[19~".to_vec()),
+                            Key::Named(NamedKey::F9)           => Some(b"\x1b[20~".to_vec()),
+                            Key::Named(NamedKey::F10)          => Some(b"\x1b[21~".to_vec()),
+                            Key::Named(NamedKey::F11)          => Some(b"\x1b[23~".to_vec()),
+                            Key::Named(NamedKey::F12)          => Some(b"\x1b[24~".to_vec()),
+                            _ => None,
+                        }
+                    }
                 };
+
                 if let Some(b) = bytes {
                     if let Some(pty) = &mut self.pty {
                         let _ = pty.write_bytes(&b);
