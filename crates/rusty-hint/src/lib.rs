@@ -1,4 +1,4 @@
 pub mod index;
 pub mod engine;
 
-pub use engine::{HintEngine, Hint};
+pub use engine::{CompletionEntry, EntryKind, Hint, HintEngine};

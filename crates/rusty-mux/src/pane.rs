@@ -2,16 +2,19 @@ use rusty_core::{Attrs, Cell, Color, Grid};
 use rusty_core::cursor::Cursor;
 use rusty_core::parser::{Action, Parser};
 
+pub enum PaneEvent {
+    Cwd(String),
+}
+
 pub struct Pane {
-    pub id:          u32,
-    pub grid:        Grid,
-    pub cursor:      Cursor,
-    /// How many scrollback rows are hidden above the viewport (0 = live view).
-    pub scroll_off:  usize,
-    parser:          Parser,
-    pen_fg:          Color,
-    pen_bg:          Color,
-    pen_attrs:       Attrs,
+    pub id:         u32,
+    pub grid:       Grid,
+    pub cursor:     Cursor,
+    pub scroll_off: usize,
+    parser:         Parser,
+    pen_fg:         Color,
+    pen_bg:         Color,
+    pen_attrs:      Attrs,
 }
 
 impl Pane {
@@ -30,10 +33,9 @@ impl Pane {
 
     pub fn resize(&mut self, cols: usize, rows: usize) {
         self.grid.resize(cols, rows);
-        self.cursor.col  = self.cursor.col.min(cols.saturating_sub(1));
-        self.cursor.row  = self.cursor.row.min(rows.saturating_sub(1));
-        // Any input resets to live view.
-        self.scroll_off  = 0;
+        self.cursor.col = self.cursor.col.min(cols.saturating_sub(1));
+        self.cursor.row = self.cursor.row.min(rows.saturating_sub(1));
+        self.scroll_off = 0;
     }
 
     pub fn scroll_up_view(&mut self, lines: usize) {
@@ -51,27 +53,41 @@ impl Pane {
         }
     }
 
+    /// Process bytes and return side-channel events (e.g. OSC 7 CWD changes).
+    pub fn process_with_events(&mut self, bytes: &[u8]) -> Vec<PaneEvent> {
+        let mut events = Vec::new();
+        for action in self.parser.advance(bytes) {
+            if let Action::OscDispatch { ref params, .. } = action {
+                // OSC 7: notify CWD — params[0] = "7", params[1] = "file://host/path"
+                if params.first().map(|p| p.as_slice() == b"7").unwrap_or(false) {
+                    if let Some(payload) = params.get(1) {
+                        if let Ok(s) = std::str::from_utf8(payload) {
+                            events.push(PaneEvent::Cwd(s.to_owned()));
+                        }
+                    }
+                }
+            }
+            self.apply(action);
+        }
+        events
+    }
+
     fn apply(&mut self, action: Action) {
         match action {
             Action::Print(ch) => self.print(ch),
-
             Action::Execute(byte) => match byte {
-                0x08 => self.cursor_left(1),            // BS
-                0x09 => self.tab(),                     // HT
-                0x0a | 0x0b | 0x0c => self.linefeed(),  // LF/VT/FF
-                0x0d => self.cursor.col = 0,             // CR
+                0x08 => self.cursor_left(1),
+                0x09 => self.tab(),
+                0x0a | 0x0b | 0x0c => self.linefeed(),
+                0x0d => self.cursor.col = 0,
                 _ => {}
             },
-
-            Action::CsiDispatch { params, action, .. } => {
-                self.csi(&params, action);
-            }
-
+            Action::CsiDispatch { params, action, .. } => self.csi(&params, action),
             _ => {}
         }
     }
 
-    // ── printing ────────────────────────────────────────────────────────────
+    // ── printing ──────────────────────────────────────────────────────────────
 
     fn print(&mut self, ch: char) {
         if self.cursor.col >= self.grid.width {
@@ -83,56 +99,37 @@ impl Pane {
         self.cursor.col += 1;
     }
 
-    // ── cursor movement ──────────────────────────────────────────────────────
+    // ── cursor movement ───────────────────────────────────────────────────────
 
-    fn cursor_up(&mut self, n: usize) {
-        self.cursor.row = self.cursor.row.saturating_sub(n);
-    }
-    fn cursor_down(&mut self, n: usize) {
-        self.cursor.row = (self.cursor.row + n).min(self.grid.height - 1);
-    }
-    fn cursor_left(&mut self, n: usize) {
-        self.cursor.col = self.cursor.col.saturating_sub(n);
-    }
-    fn cursor_right(&mut self, n: usize) {
-        self.cursor.col = (self.cursor.col + n).min(self.grid.width - 1);
-    }
+    fn cursor_up(&mut self, n: usize)    { self.cursor.row = self.cursor.row.saturating_sub(n); }
+    fn cursor_down(&mut self, n: usize)  { self.cursor.row = (self.cursor.row + n).min(self.grid.height - 1); }
+    fn cursor_left(&mut self, n: usize)  { self.cursor.col = self.cursor.col.saturating_sub(n); }
+    fn cursor_right(&mut self, n: usize) { self.cursor.col = (self.cursor.col + n).min(self.grid.width - 1); }
 
     fn linefeed(&mut self) {
         if self.cursor.row + 1 >= self.grid.height {
-            self.scroll_up(1);
+            self.grid.scroll_up(1);
         } else {
             self.cursor.row += 1;
         }
     }
 
     fn tab(&mut self) {
-        let next = ((self.cursor.col / 8) + 1) * 8;
-        self.cursor.col = next.min(self.grid.width - 1);
+        self.cursor.col = (((self.cursor.col / 8) + 1) * 8).min(self.grid.width - 1);
     }
 
-    fn scroll_up(&mut self, n: usize) {
-        self.grid.scroll_up(n);
-    }
-
-    // ── erase ────────────────────────────────────────────────────────────────
+    // ── erase ─────────────────────────────────────────────────────────────────
 
     fn erase_in_display(&mut self, mode: i64) {
         let (col, row) = (self.cursor.col, self.cursor.row);
         let (w, h) = (self.grid.width, self.grid.height);
         match mode {
             0 => {
-                // cursor to end
                 for c in col..w { self.grid.set(c, row, Cell::default()); }
-                for r in (row + 1)..h {
-                    for c in 0..w { self.grid.set(c, r, Cell::default()); }
-                }
+                for r in (row + 1)..h { for c in 0..w { self.grid.set(c, r, Cell::default()); } }
             }
             1 => {
-                // start to cursor
-                for r in 0..row {
-                    for c in 0..w { self.grid.set(c, r, Cell::default()); }
-                }
+                for r in 0..row { for c in 0..w { self.grid.set(c, r, Cell::default()); } }
                 for c in 0..=col { self.grid.set(c, row, Cell::default()); }
             }
             2 | 3 => self.grid.clear(),
@@ -141,8 +138,7 @@ impl Pane {
     }
 
     fn erase_in_line(&mut self, mode: i64) {
-        let (col, row) = (self.cursor.col, self.cursor.row);
-        let w = self.grid.width;
+        let (col, row, w) = (self.cursor.col, self.cursor.row, self.grid.width);
         match mode {
             0 => for c in col..w  { self.grid.set(c, row, Cell::default()); },
             1 => for c in 0..=col { self.grid.set(c, row, Cell::default()); },
@@ -151,13 +147,10 @@ impl Pane {
         }
     }
 
-    // ── CSI dispatch ─────────────────────────────────────────────────────────
+    // ── CSI ───────────────────────────────────────────────────────────────────
 
     fn csi(&mut self, params: &[i64], action: char) {
-        let p = |i: usize, default: i64| -> i64 {
-            params.get(i).copied().filter(|&v| v != 0).unwrap_or(default)
-        };
-
+        let p = |i: usize, default: i64| params.get(i).copied().filter(|&v| v != 0).unwrap_or(default);
         match action {
             'A' => self.cursor_up(p(0, 1) as usize),
             'B' => self.cursor_down(p(0, 1) as usize),
@@ -172,14 +165,14 @@ impl Pane {
             }
             'J' => self.erase_in_display(p(0, 0)),
             'K' => self.erase_in_line(p(0, 0)),
-            'S' => self.scroll_up(p(0, 1) as usize),
+            'S' => self.grid.scroll_up(p(0, 1) as usize),
             'm' => self.sgr(params),
-            'l' | 'h' => {} // mode set/reset — ignore for now
+            'l' | 'h' => {}
             _ => {}
         }
     }
 
-    // ── SGR (Select Graphic Rendition) ───────────────────────────────────────
+    // ── SGR ───────────────────────────────────────────────────────────────────
 
     fn sgr(&mut self, params: &[i64]) {
         let params = if params.is_empty() { &[0i64][..] } else { params };
@@ -197,22 +190,13 @@ impl Pane {
                 23 => self.pen_attrs.remove(Attrs::ITALIC),
                 24 => self.pen_attrs.remove(Attrs::UNDERLINE),
                 27 => self.pen_attrs.remove(Attrs::REVERSE),
-                // Standard fg (30-37) and bright fg (90-97)
-                30..=37 => self.pen_fg = Color::Indexed(params[i] as u8 - 30),
-                38 => {
-                    if let Some(c) = self.parse_extended_color(params, &mut i) {
-                        self.pen_fg = c;
-                    }
-                }
+                30..=37  => self.pen_fg = Color::Indexed(params[i] as u8 - 30),
+                38 => { if let Some(c) = self.parse_extended_color(params, &mut i) { self.pen_fg = c; } }
                 39 => self.pen_fg = Color::Default,
-                40..=47 => self.pen_bg = Color::Indexed(params[i] as u8 - 40),
-                48 => {
-                    if let Some(c) = self.parse_extended_color(params, &mut i) {
-                        self.pen_bg = c;
-                    }
-                }
+                40..=47  => self.pen_bg = Color::Indexed(params[i] as u8 - 40),
+                48 => { if let Some(c) = self.parse_extended_color(params, &mut i) { self.pen_bg = c; } }
                 49 => self.pen_bg = Color::Default,
-                90..=97  => self.pen_fg = Color::Indexed(params[i] as u8 - 90 + 8),
+                90..=97   => self.pen_fg = Color::Indexed(params[i] as u8 - 90 + 8),
                 100..=107 => self.pen_bg = Color::Indexed(params[i] as u8 - 100 + 8),
                 _ => {}
             }

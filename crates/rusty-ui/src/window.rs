@@ -3,6 +3,7 @@ use std::sync::Arc;
 use fontdue::{Font, FontSettings};
 use rusty_config::Config;
 use rusty_core::Color;
+use rusty_hint::HintEngine;
 use rusty_mux::pane::Pane;
 use rusty_pty::{Pty, PtySize};
 use winit::{
@@ -207,8 +208,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -250,6 +251,25 @@ impl Gpu {
     }
 }
 
+// ── popup completion state ────────────────────────────────────────────────────
+
+struct PopupState {
+    entries:  Vec<rusty_hint::CompletionEntry>,
+    selected: usize,
+}
+
+impl PopupState {
+    fn new(entries: Vec<rusty_hint::CompletionEntry>) -> Option<Self> {
+        if entries.is_empty() { return None; }
+        Some(Self { entries, selected: 0 })
+    }
+    fn selected_insert(&self) -> &str {
+        &self.entries[self.selected].insert
+    }
+    fn move_up(&mut self)   { if self.selected > 0 { self.selected -= 1; } }
+    fn move_down(&mut self) { if self.selected + 1 < self.entries.len() { self.selected += 1; } }
+}
+
 // ── application ───────────────────────────────────────────────────────────────
 
 /// A selected region in cell coordinates (col, row) relative to the scrollback view.
@@ -289,6 +309,8 @@ struct App {
     window:     Option<Arc<Window>>,
     pty:        Option<Pty>,
     pane:       Option<Pane>,
+    hint:       HintEngine,
+    popup:      Option<PopupState>,
     font_px:    f32,
     cell_w:     usize,
     cell_h:     usize,
@@ -311,6 +333,8 @@ impl App {
             window:     None,
             pty:        None,
             pane:       None,
+            hint:       HintEngine::new(),
+            popup:      None,
             font_px:    font_size,
             cell_w:     8,
             cell_h:     16,
@@ -503,63 +527,155 @@ impl ApplicationHandler for App {
                         _ => None,
                     }
                 } else {
-                    // No ctrl — use the OS-composed text first (handles layout, shift, option).
-                    // Fall through to logical_key for named keys that produce no text.
-                    if let Some(t) = &text {
-                        Some(t.as_str().as_bytes().to_vec())
-                    } else {
+                    // ── Popup navigation (takes priority over everything else) ──
+                    if let Some(popup) = &mut self.popup {
                         match &logical_key {
-                            Key::Named(NamedKey::Enter)        => Some(b"\r".to_vec()),
-                            Key::Named(NamedKey::Backspace)    => Some(b"\x7f".to_vec()),
-                            Key::Named(NamedKey::Escape)       => Some(b"\x1b".to_vec()),
-                            Key::Named(NamedKey::Tab)          => Some(b"\t".to_vec()),
-                            Key::Named(NamedKey::ArrowUp)      => Some(b"\x1b[A".to_vec()),
-                            Key::Named(NamedKey::ArrowDown)    => Some(b"\x1b[B".to_vec()),
-                            Key::Named(NamedKey::ArrowRight)   => Some(b"\x1b[C".to_vec()),
-                            Key::Named(NamedKey::ArrowLeft)    => Some(b"\x1b[D".to_vec()),
-                            Key::Named(NamedKey::Home)         => Some(b"\x1b[H".to_vec()),
-                            Key::Named(NamedKey::End)          => Some(b"\x1b[F".to_vec()),
-                            Key::Named(NamedKey::PageUp)       => Some(b"\x1b[5~".to_vec()),
-                            Key::Named(NamedKey::PageDown)     => Some(b"\x1b[6~".to_vec()),
-                            Key::Named(NamedKey::Insert)       => Some(b"\x1b[2~".to_vec()),
-                            Key::Named(NamedKey::Delete)       => Some(b"\x1b[3~".to_vec()),
-                            Key::Named(NamedKey::F1)           => Some(b"\x1bOP".to_vec()),
-                            Key::Named(NamedKey::F2)           => Some(b"\x1bOQ".to_vec()),
-                            Key::Named(NamedKey::F3)           => Some(b"\x1bOR".to_vec()),
-                            Key::Named(NamedKey::F4)           => Some(b"\x1bOS".to_vec()),
-                            Key::Named(NamedKey::F5)           => Some(b"\x1b[15~".to_vec()),
-                            Key::Named(NamedKey::F6)           => Some(b"\x1b[17~".to_vec()),
-                            Key::Named(NamedKey::F7)           => Some(b"\x1b[18~".to_vec()),
-                            Key::Named(NamedKey::F8)           => Some(b"\x1b[19~".to_vec()),
-                            Key::Named(NamedKey::F9)           => Some(b"\x1b[20~".to_vec()),
-                            Key::Named(NamedKey::F10)          => Some(b"\x1b[21~".to_vec()),
-                            Key::Named(NamedKey::F11)          => Some(b"\x1b[23~".to_vec()),
-                            Key::Named(NamedKey::F12)          => Some(b"\x1b[24~".to_vec()),
-                            _ => None,
+                            Key::Named(NamedKey::ArrowUp) => { popup.move_up(); return; }
+                            Key::Named(NamedKey::ArrowDown) => { popup.move_down(); return; }
+                            Key::Named(NamedKey::Escape) => { self.popup = None; return; }
+                            Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Tab) => {
+                                // Accept selected entry.
+                                let insert = popup.selected_insert().to_owned();
+                                self.popup = None;
+                                // Send only the suffix after what's already typed.
+                                let suffix = insert.strip_prefix(self.hint.line.as_str())
+                                    .unwrap_or(&insert)
+                                    .to_owned();
+                                self.hint.line = insert;
+                                if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                                if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(suffix.as_bytes()); }
+                                return;
+                            }
+                            _ => {
+                                // Any other key closes the popup and passes through normally.
+                                self.popup = None;
+                            }
                         }
                     }
+
+                    // Tab — show popup (or accept ghost hint if no completions).
+                    if matches!(&logical_key, Key::Named(NamedKey::Tab)) {
+                        let entries = self.hint.completions();
+                        if !entries.is_empty() {
+                            self.popup = PopupState::new(entries);
+                            return;
+                        }
+                        if let Some(suffix) = self.hint.accept_ghost() {
+                            if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                            if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(suffix.as_bytes()); }
+                            return;
+                        }
+                        // Nothing to complete — pass \t through.
+                    }
+
+                    // ArrowRight — accept ghost hint if showing, otherwise normal cursor move.
+                    if matches!(&logical_key, Key::Named(NamedKey::ArrowRight)) {
+                        if let Some(suffix) = self.hint.accept_ghost() {
+                            if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                            if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(suffix.as_bytes()); }
+                            return;
+                        }
+                    }
+
+                    // Use the OS-composed text first, fall through to named key sequences.
+                    if let Some(t) = &text {
+                        let s = t.as_str();
+                        // Update line buffer for hint tracking.
+                        match s {
+                            "\r" | "\n" => {
+                                self.hint.commit();
+                            }
+                            "\x7f" => {
+                                // Backspace
+                                let mut line = self.hint.line.clone();
+                                line.pop();
+                                self.hint.update_line(&line);
+                            }
+                            "\x1b" => {
+                                // Escape clears the hint line.
+                                self.hint.update_line("");
+                            }
+                            _ => {
+                                let mut line = self.hint.line.clone();
+                                line.push_str(s);
+                                self.hint.update_line(&line);
+                            }
+                        }
+                        self.popup = None; // typing closes the popup
+                        let bytes = s.as_bytes().to_vec();
+                        if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                        if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(&bytes); }
+                        return;
+                    }
+
+                    // Named keys with no text representation.
+                    let bytes: Option<Vec<u8>> = match &logical_key {
+                        Key::Named(NamedKey::Enter)        => { self.hint.commit(); Some(b"\r".to_vec()) }
+                        Key::Named(NamedKey::Backspace)    => {
+                            let mut line = self.hint.line.clone();
+                            line.pop();
+                            self.hint.update_line(&line);
+                            Some(b"\x7f".to_vec())
+                        }
+                        Key::Named(NamedKey::Escape)       => { self.hint.update_line(""); Some(b"\x1b".to_vec()) }
+                        Key::Named(NamedKey::Tab)          => Some(b"\t".to_vec()),
+                        Key::Named(NamedKey::ArrowUp)      => { self.hint.update_line(""); Some(b"\x1b[A".to_vec()) }
+                        Key::Named(NamedKey::ArrowDown)    => { self.hint.update_line(""); Some(b"\x1b[B".to_vec()) }
+                        Key::Named(NamedKey::ArrowRight)   => Some(b"\x1b[C".to_vec()),
+                        Key::Named(NamedKey::ArrowLeft)    => Some(b"\x1b[D".to_vec()),
+                        Key::Named(NamedKey::Home)         => Some(b"\x1b[H".to_vec()),
+                        Key::Named(NamedKey::End)          => Some(b"\x1b[F".to_vec()),
+                        Key::Named(NamedKey::PageUp)       => Some(b"\x1b[5~".to_vec()),
+                        Key::Named(NamedKey::PageDown)     => Some(b"\x1b[6~".to_vec()),
+                        Key::Named(NamedKey::Insert)       => Some(b"\x1b[2~".to_vec()),
+                        Key::Named(NamedKey::Delete)       => Some(b"\x1b[3~".to_vec()),
+                        Key::Named(NamedKey::F1)           => Some(b"\x1bOP".to_vec()),
+                        Key::Named(NamedKey::F2)           => Some(b"\x1bOQ".to_vec()),
+                        Key::Named(NamedKey::F3)           => Some(b"\x1bOR".to_vec()),
+                        Key::Named(NamedKey::F4)           => Some(b"\x1bOS".to_vec()),
+                        Key::Named(NamedKey::F5)           => Some(b"\x1b[15~".to_vec()),
+                        Key::Named(NamedKey::F6)           => Some(b"\x1b[17~".to_vec()),
+                        Key::Named(NamedKey::F7)           => Some(b"\x1b[18~".to_vec()),
+                        Key::Named(NamedKey::F8)           => Some(b"\x1b[19~".to_vec()),
+                        Key::Named(NamedKey::F9)           => Some(b"\x1b[20~".to_vec()),
+                        Key::Named(NamedKey::F10)          => Some(b"\x1b[21~".to_vec()),
+                        Key::Named(NamedKey::F11)          => Some(b"\x1b[23~".to_vec()),
+                        Key::Named(NamedKey::F12)          => Some(b"\x1b[24~".to_vec()),
+                        _ => None,
+                    };
+                    if let Some(b) = bytes {
+                        if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                        if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(&b); }
+                    }
+                    return;
                 };
 
+                // Ctrl path lands here.
                 if let Some(b) = bytes {
-                    // Any keystroke snaps back to live view.
-                    if let Some(pane) = &mut self.pane {
-                        pane.scroll_off = 0;
-                    }
-                    if let Some(pty) = &mut self.pty {
-                        let _ = pty.write_bytes(&b);
-                    }
+                    self.hint.update_line(""); // Ctrl sequences reset the hint.
+                    if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                    if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(&b); }
                 }
             }
 
             WindowEvent::RedrawRequested => {
-                // Drain PTY output into pane.
+                // Drain PTY output into pane, collect side-channel events.
                 if let (Some(pty), Some(pane)) = (&self.pty, &mut self.pane) {
                     while let Ok(bytes) = pty.rx.try_recv() {
-                        pane.process(&bytes);
+                        for event in pane.process_with_events(&bytes) {
+                            match event {
+                                rusty_mux::pane::PaneEvent::Cwd(payload) => {
+                                    self.hint.set_cwd_from_osc7(&payload);
+                                }
+                            }
+                        }
                     }
                 }
                 if let (Some(gpu), Some(pane)) = (&mut self.gpu, &self.pane) {
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config);
+                    let ghost = self.hint.hint()
+                        .map(|h| h.ghost(&self.hint.line).to_owned())
+                        .unwrap_or_default();
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config, &ghost, self.popup.as_ref());
                 }
             }
 
@@ -625,6 +741,8 @@ fn paint_framebuf(
     buf:       &mut [u8],
     selection: Option<Selection>,
     config:    &Config,
+    ghost:     &str,
+    popup:     Option<&PopupState>,
 ) {
     let palette  = &config.palette;
     let ansi16   = palette.to_ansi16();
@@ -702,6 +820,159 @@ fn paint_framebuf(
                     buf[i + 2] = blend(fg[2], bg[2]);
                     buf[i + 3] = 0xff;
                 }
+            }
+        }
+    }
+
+    // ── Ghost text (hint) ─────────────────────────────────────────────────────
+    if !ghost.is_empty() && !pane.scroll_off > 0 {
+        // Dim foreground — about 35% opacity over the background.
+        let ghost_fg: [u8; 4] = [0x60, 0x60, 0x60, 0xff];
+        let cursor = pane.cursor;
+        let mut ghost_col = cursor.col + 1; // start one cell after cursor
+        let ghost_row = cursor.row;
+        let py = ghost_row * cell_h;
+
+        for ch in ghost.chars() {
+            if ghost_col >= pane.grid.width { break; }
+            if py >= fb_h { break; }
+
+            // Clear cell background (use theme bg).
+            let px = ghost_col * cell_w;
+            for dy in 0..cell_h {
+                let y = py + dy;
+                if y >= fb_h { break; }
+                for dx in 0..cell_w {
+                    let x = px + dx;
+                    if x >= fb_w { break; }
+                    let i = (y * fb_w + x) * 4;
+                    buf[i..i + 4].copy_from_slice(&cfg_bg);
+                }
+            }
+
+            if ch != ' ' {
+                let (m, bitmap) = font.rasterize(ch, font_px);
+                let glyph_top  = py as i32 + baseline as i32 - m.height as i32 - m.ymin;
+                let glyph_left = px as i32 + m.xmin;
+
+                for by in 0..m.height {
+                    let y = glyph_top + by as i32;
+                    if y < 0 || y as usize >= fb_h { continue; }
+                    let row_base = y as usize * fb_w;
+                    for bx in 0..m.width {
+                        let a = bitmap[by * m.width + bx];
+                        if a == 0 { continue; }
+                        let x = glyph_left + bx as i32;
+                        if x < 0 || x as usize >= fb_w { continue; }
+                        let i = (row_base + x as usize) * 4;
+                        let a32 = a as u32;
+                        let blend = |f: u8, b: u8| -> u8 { ((f as u32 * a32 + b as u32 * (255 - a32)) / 255) as u8 };
+                        buf[i]     = blend(ghost_fg[0], cfg_bg[0]);
+                        buf[i + 1] = blend(ghost_fg[1], cfg_bg[1]);
+                        buf[i + 2] = blend(ghost_fg[2], cfg_bg[2]);
+                        buf[i + 3] = 0xff;
+                    }
+                }
+            }
+            ghost_col += 1;
+        }
+    }
+
+    // ── Completion popup ──────────────────────────────────────────────────────
+    if let Some(popup) = popup {
+        let cursor      = pane.cursor;
+        let popup_x     = cursor.col * cell_w;
+        let popup_y_top = (cursor.row + 1) * cell_h; // just below cursor row
+
+        // Popup dimensions in cells.
+        let max_visible = 8usize;
+        let visible_count = popup.entries.len().min(max_visible);
+        let popup_w_cells = popup.entries.iter()
+            .take(max_visible)
+            .map(|e| e.label.len())
+            .max()
+            .unwrap_or(10)
+            .max(10) + 2; // padding
+
+        let popup_w_px = popup_w_cells * cell_w;
+        let popup_h_px = visible_count * cell_h;
+
+        // Clamp to screen.
+        let px_start = popup_x.min(fb_w.saturating_sub(popup_w_px));
+
+        // Colors.
+        let row_bg:   [u8; 4] = [0x1e, 0x1e, 0x2e, 0xff]; // dark popup bg
+        let row_fg:   [u8; 4] = [0xcc, 0xcc, 0xcc, 0xff];
+        let sel_bg:   [u8; 4] = [0x26, 0x4f, 0x78, 0xff]; // selected row
+        let sel_fg:   [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+        let dir_fg:   [u8; 4] = [0x8f, 0xc3, 0xff, 0xff]; // blue for dirs
+        let cmd_fg:   [u8; 4] = [0xa8, 0xe0, 0x8a, 0xff]; // green for commands
+        let hist_fg:  [u8; 4] = [0xe5, 0xc0, 0x76, 0xff]; // yellow for history
+
+        let start_idx = if popup.selected >= max_visible {
+            popup.selected - max_visible + 1
+        } else {
+            0
+        };
+
+        for (row_idx, entry) in popup.entries.iter().enumerate().skip(start_idx).take(max_visible) {
+            let screen_row = row_idx - start_idx;
+            let py = popup_y_top + screen_row * cell_h;
+            if py + cell_h > fb_h { break; }
+
+            let is_sel  = row_idx == popup.selected;
+            let bg      = if is_sel { sel_bg } else { row_bg };
+            let fg      = if is_sel {
+                sel_fg
+            } else {
+                match entry.kind {
+                    rusty_hint::EntryKind::Directory => dir_fg,
+                    rusty_hint::EntryKind::Command   => cmd_fg,
+                    rusty_hint::EntryKind::History   => hist_fg,
+                    rusty_hint::EntryKind::File      => row_fg,
+                }
+            };
+
+            // Fill row background.
+            for dy in 0..cell_h {
+                let y = py + dy;
+                if y >= fb_h { break; }
+                for dx in 0..popup_w_px {
+                    let x = px_start + dx;
+                    if x >= fb_w { break; }
+                    let i = (y * fb_w + x) * 4;
+                    buf[i..i + 4].copy_from_slice(&bg);
+                }
+            }
+
+            // Render label text (with 1-cell left padding).
+            let mut glyph_col = px_start + cell_w;
+            for ch in entry.label.chars() {
+                if glyph_col + cell_w > px_start + popup_w_px { break; }
+                if ch == ' ' { glyph_col += cell_w; continue; }
+                let (m, bitmap) = font.rasterize(ch, font_px);
+                if m.width == 0 || m.height == 0 { glyph_col += cell_w; continue; }
+                let gx = glyph_col as i32 + m.xmin;
+                let gy = py as i32 + baseline as i32 - m.height as i32 - m.ymin;
+                for by in 0..m.height {
+                    let y = gy + by as i32;
+                    if y < 0 || y as usize >= fb_h { continue; }
+                    let rb = y as usize * fb_w;
+                    for bx in 0..m.width {
+                        let a = bitmap[by * m.width + bx];
+                        if a == 0 { continue; }
+                        let x = gx + bx as i32;
+                        if x < 0 || x as usize >= fb_w { continue; }
+                        let i   = (rb + x as usize) * 4;
+                        let a32 = a as u32;
+                        let blend = |f: u8, b: u8| -> u8 { ((f as u32 * a32 + b as u32 * (255 - a32)) / 255) as u8 };
+                        buf[i]     = blend(fg[0], bg[0]);
+                        buf[i + 1] = blend(fg[1], bg[1]);
+                        buf[i + 2] = blend(fg[2], bg[2]);
+                        buf[i + 3] = 0xff;
+                    }
+                }
+                glyph_col += cell_w;
             }
         }
     }
