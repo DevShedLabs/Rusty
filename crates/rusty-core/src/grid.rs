@@ -1,10 +1,15 @@
 use crate::Cell;
+use std::collections::VecDeque;
+
+const MAX_SCROLLBACK: usize = 10_000;
 
 pub struct Grid {
-    pub width:  usize,
-    pub height: usize,
-    cells:      Vec<Cell>,
-    dirty:      Vec<bool>,
+    pub width:    usize,
+    pub height:   usize,
+    /// Active screen cells, row-major.
+    cells:        Vec<Cell>,
+    /// Lines that have scrolled off the top (oldest first).
+    pub scrollback: VecDeque<Vec<Cell>>,
 }
 
 impl Grid {
@@ -13,8 +18,8 @@ impl Grid {
         Self {
             width,
             height,
-            cells: vec![Cell::default(); len],
-            dirty: vec![true; len],
+            cells:      vec![Cell::default(); len],
+            scrollback: VecDeque::new(),
         }
     }
 
@@ -29,37 +34,63 @@ impl Grid {
 
     pub fn set(&mut self, col: usize, row: usize, cell: Cell) {
         let i = self.idx(col, row);
-        if self.cells[i] != cell {
-            self.cells[i] = cell;
-            self.dirty[i] = true;
-        }
-    }
-
-    pub fn is_dirty(&self, col: usize, row: usize) -> bool {
-        self.dirty[self.idx(col, row)]
-    }
-
-    pub fn clear_dirty(&mut self) {
-        self.dirty.fill(false);
+        self.cells[i] = cell;
     }
 
     pub fn clear(&mut self) {
         self.cells.fill(Cell::default());
-        self.dirty.fill(true);
     }
 
-    /// Scroll the grid up by `n` rows, clearing the vacated rows at the bottom.
+    /// Scroll up by `n` rows, pushing displaced rows into scrollback.
     pub fn scroll_up(&mut self, n: usize) {
         let n = n.min(self.height);
-        let row_bytes = self.width;
-        self.cells.copy_within(n * row_bytes.., 0);
-        let clear_start = (self.height - n) * row_bytes;
+        for r in 0..n {
+            let start = r * self.width;
+            let row: Vec<Cell> = self.cells[start..start + self.width].to_vec();
+            if self.scrollback.len() >= MAX_SCROLLBACK {
+                self.scrollback.pop_front();
+            }
+            self.scrollback.push_back(row);
+        }
+        self.cells.copy_within(n * self.width.., 0);
+        let clear_start = (self.height - n) * self.width;
         self.cells[clear_start..].fill(Cell::default());
-        self.dirty.fill(true);
     }
 
-    pub fn resize(&mut self, width: usize, height: usize) {
-        *self = Self::new(width, height);
+    /// Reflow content into new dimensions, preserving as much as possible.
+    pub fn resize(&mut self, new_width: usize, new_height: usize) {
+        let mut new_cells = vec![Cell::default(); new_width * new_height];
+        let copy_rows = self.height.min(new_height);
+        let copy_cols = self.width.min(new_width);
+        for r in 0..copy_rows {
+            for c in 0..copy_cols {
+                new_cells[r * new_width + c] = self.cells[r * self.width + c];
+            }
+        }
+        self.cells  = new_cells;
+        self.width  = new_width;
+        self.height = new_height;
+    }
+
+    /// Get a cell from the combined scrollback+screen view.
+    /// `row` 0 = oldest scrollback line, scrollback.len() = first screen row.
+    pub fn scrollback_get(&self, col: usize, row: usize) -> &Cell {
+        let sb = self.scrollback.len();
+        if row < sb {
+            self.scrollback[row].get(col).unwrap_or(&Cell::BLANK)
+        } else {
+            let screen_row = row - sb;
+            if screen_row < self.height && col < self.width {
+                &self.cells[screen_row * self.width + col]
+            } else {
+                &Cell::BLANK
+            }
+        }
+    }
+
+    /// Total rows in scrollback + screen.
+    pub fn total_rows(&self) -> usize {
+        self.scrollback.len() + self.height
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {

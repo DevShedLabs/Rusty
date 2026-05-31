@@ -3,27 +3,46 @@ use rusty_core::cursor::Cursor;
 use rusty_core::parser::{Action, Parser};
 
 pub struct Pane {
-    pub id:     u32,
-    pub grid:   Grid,
-    pub cursor: Cursor,
-    parser:     Parser,
-    /// Current SGR pen — applied to every printed character.
-    pen_fg:     Color,
-    pen_bg:     Color,
-    pen_attrs:  Attrs,
+    pub id:          u32,
+    pub grid:        Grid,
+    pub cursor:      Cursor,
+    /// How many scrollback rows are hidden above the viewport (0 = live view).
+    pub scroll_off:  usize,
+    parser:          Parser,
+    pen_fg:          Color,
+    pen_bg:          Color,
+    pen_attrs:       Attrs,
 }
 
 impl Pane {
     pub fn new(id: u32, cols: usize, rows: usize) -> Self {
         Self {
             id,
-            grid:      Grid::new(cols, rows),
-            cursor:    Cursor { col: 0, row: 0, visible: true },
-            parser:    Parser::new(),
-            pen_fg:    Color::Default,
-            pen_bg:    Color::Default,
-            pen_attrs: Attrs::empty(),
+            grid:       Grid::new(cols, rows),
+            cursor:     Cursor { col: 0, row: 0, visible: true },
+            scroll_off: 0,
+            parser:     Parser::new(),
+            pen_fg:     Color::Default,
+            pen_bg:     Color::Default,
+            pen_attrs:  Attrs::empty(),
         }
+    }
+
+    pub fn resize(&mut self, cols: usize, rows: usize) {
+        self.grid.resize(cols, rows);
+        self.cursor.col  = self.cursor.col.min(cols.saturating_sub(1));
+        self.cursor.row  = self.cursor.row.min(rows.saturating_sub(1));
+        // Any input resets to live view.
+        self.scroll_off  = 0;
+    }
+
+    pub fn scroll_up_view(&mut self, lines: usize) {
+        let max = self.grid.scrollback.len();
+        self.scroll_off = (self.scroll_off + lines).min(max);
+    }
+
+    pub fn scroll_down_view(&mut self, lines: usize) {
+        self.scroll_off = self.scroll_off.saturating_sub(lines);
     }
 
     pub fn process(&mut self, bytes: &[u8]) {

@@ -10,11 +10,10 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self {
-            ch:    ' ',
-            fg:    Color::Default,
-            bg:    Color::Default,
-            attrs: Attrs::empty(),
-        }
+        Self { ch: ' ', fg: Color::Default, bg: Color::Default, attrs: Attrs::empty() }
     }
+}
+
+impl Cell {
+    pub const BLANK: Self = Self { ch: ' ', fg: Color::Default, bg: Color::Default, attrs: Attrs::from_bits_retain(0) };
 }

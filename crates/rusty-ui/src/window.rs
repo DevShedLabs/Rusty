@@ -316,16 +316,33 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::Resized(phys) => {
+                if phys.width == 0 || phys.height == 0 { return; }
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(phys.width, phys.height);
-                    let cols = (phys.width  as usize / self.cell_w).max(1);
-                    let rows = (phys.height as usize / self.cell_h).max(1);
-                    self.pane = Some(Pane::new(0, cols, rows));
-                    if let Some(pty) = &self.pty {
-                        let _ = pty.resize(PtySize {
-                            cols: cols as u16, rows: rows as u16,
-                            px_w: phys.width as u16, px_h: phys.height as u16,
-                        });
+                }
+                let cols = (phys.width  as usize / self.cell_w).max(1);
+                let rows = (phys.height as usize / self.cell_h).max(1);
+                if let Some(pane) = &mut self.pane {
+                    pane.resize(cols, rows);
+                }
+                if let Some(pty) = &self.pty {
+                    let _ = pty.resize(PtySize {
+                        cols: cols as u16, rows: rows as u16,
+                        px_w: phys.width as u16, px_h: phys.height as u16,
+                    });
+                }
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y)   => y as f32,
+                    winit::event::MouseScrollDelta::PixelDelta(pos)   => pos.y as f32 / self.cell_h as f32,
+                };
+                if let Some(pane) = &mut self.pane {
+                    if lines < 0.0 {
+                        pane.scroll_up_view((-lines).ceil() as usize);
+                    } else {
+                        pane.scroll_down_view(lines.ceil() as usize);
                     }
                 }
             }
@@ -400,6 +417,10 @@ impl ApplicationHandler for App {
                 };
 
                 if let Some(b) = bytes {
+                    // Any keystroke snaps back to live view.
+                    if let Some(pane) = &mut self.pane {
+                        pane.scroll_off = 0;
+                    }
                     if let Some(pty) = &mut self.pty {
                         let _ = pty.write_bytes(&b);
                     }
@@ -466,21 +487,31 @@ fn paint_framebuf(
     let bg_default = Color::Default.to_rgba(false);
     buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&bg_default));
 
-    let grid   = &pane.grid;
-    let cursor = pane.cursor;
+    let grid       = &pane.grid;
+    let cursor     = pane.cursor;
+    let scroll_off = pane.scroll_off;
+    let total      = grid.total_rows();
+    // First scrollback row to show = total - height - scroll_off
+    let view_start = total.saturating_sub(grid.height).saturating_sub(scroll_off);
+    let scrolling  = scroll_off > 0;
 
-    for row in 0..grid.height {
+    for screen_row in 0..grid.height {
+        let src_row = view_start + screen_row;
         for col in 0..grid.width {
-            let cell      = *grid.get(col, row);
-            let is_cursor = col == cursor.col && row == cursor.row && cursor.visible;
+            let cell = *grid.scrollback_get(col, src_row);
+
+            // Cursor only shown when at live bottom and not scrolled away.
+            let is_cursor = !scrolling
+                && col == cursor.col
+                && screen_row == cursor.row
+                && cursor.visible;
 
             let fg: [u8; 4] = if is_cursor { cell.bg.to_rgba(false) } else { cell.fg.to_rgba(true) };
             let bg: [u8; 4] = if is_cursor { [0xcc, 0xcc, 0xcc, 0xff] } else { cell.bg.to_rgba(false) };
 
             let px = col * cell_w;
-            let py = row * cell_h;
+            let py = screen_row * cell_h;
 
-            // Fill cell background.
             for dy in 0..cell_h {
                 let y = py + dy;
                 if y >= fb_h { break; }
