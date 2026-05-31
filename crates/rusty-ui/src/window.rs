@@ -54,7 +54,7 @@ fn make_screen_tex(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
         mip_level_count: 1,
         sample_count:    1,
         dimension:       wgpu::TextureDimension::D2,
-        format:          wgpu::TextureFormat::Rgba8Unorm,
+        format:          wgpu::TextureFormat::Rgba8UnormSrgb,
         usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats:    &[],
     })
@@ -232,7 +232,16 @@ impl Gpu {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &fv, resolve_target: None,
                     ops: wgpu::Operations {
-                        load:  wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.1, b: 0.18, a: 1.0 }),
+                        load:  wgpu::LoadOp::Clear({
+                            // Clear color must be linear for an sRGB surface.
+                            // sRGB #131313 ≈ linear 0.0049
+                            let srgb_to_linear = |v: u8| -> f64 {
+                                let s = v as f64 / 255.0;
+                                if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
+                            };
+                            let [r,g,b,_] = rusty_core::color::BG;
+                            wgpu::Color { r: srgb_to_linear(r), g: srgb_to_linear(g), b: srgb_to_linear(b), a: 1.0 }
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -640,10 +649,9 @@ fn paint_framebuf(
             let is_selected = selection.map_or(false, |s| s.contains(col, screen_row));
 
             let (fg, bg): ([u8; 4], [u8; 4]) = if is_cursor {
-                (cell.bg.to_rgba(false), [0xcc, 0xcc, 0xcc, 0xff])
+                (rusty_core::color::BG, rusty_core::color::CURSOR)
             } else if is_selected {
-                // Selection highlight: light blue bg, dark fg.
-                ([0x1a, 0x1a, 0x2e, 0xff], [0x52, 0xa4, 0xff, 0xff])
+                (rusty_core::color::SEL_FG, rusty_core::color::SEL_BG)
             } else {
                 (cell.fg.to_rgba(true), cell.bg.to_rgba(false))
             };
