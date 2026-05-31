@@ -206,8 +206,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -251,6 +251,35 @@ impl Gpu {
 
 // ── application ───────────────────────────────────────────────────────────────
 
+/// A selected region in cell coordinates (col, row) relative to the scrollback view.
+#[derive(Clone, Copy, Debug)]
+struct Selection {
+    start: (usize, usize),
+    end:   (usize, usize),
+}
+
+impl Selection {
+    /// Normalise so start ≤ end in reading order.
+    fn normalised(&self) -> ((usize, usize), (usize, usize)) {
+        let (sr, sc) = (self.start.1, self.start.0);
+        let (er, ec) = (self.end.1,   self.end.0);
+        if (sr, sc) <= (er, ec) {
+            (self.start, self.end)
+        } else {
+            (self.end, self.start)
+        }
+    }
+
+    fn contains(&self, col: usize, row: usize) -> bool {
+        let ((sc, sr), (ec, er)) = self.normalised();
+        if row < sr || row > er { return false; }
+        if row == sr && row == er { return col >= sc && col <= ec; }
+        if row == sr { return col >= sc; }
+        if row == er { return col <= ec; }
+        true
+    }
+}
+
 struct App {
     shell:     String,
     font:      Font,
@@ -263,6 +292,9 @@ struct App {
     cell_h:    usize,
     baseline:  usize,
     modifiers: ModifiersState,
+    selection:  Option<Selection>,
+    selecting:  bool,
+    cursor_pos: (f64, f64),
 }
 
 impl App {
@@ -279,8 +311,43 @@ impl App {
             cell_w:    8,
             cell_h:    16,
             baseline:  13,
-            modifiers: ModifiersState::default(),
+            modifiers:  ModifiersState::default(),
+            selection:  None,
+            selecting:  false,
+            cursor_pos: (0.0, 0.0),
         }
+    }
+
+    fn pixel_to_cell(&self, x: f64, y: f64) -> (usize, usize) {
+        let col = (x as usize / self.cell_w).min(self.pane.as_ref().map_or(0, |p| p.grid.width.saturating_sub(1)));
+        let row = (y as usize / self.cell_h).min(self.pane.as_ref().map_or(0, |p| p.grid.height.saturating_sub(1)));
+        (col, row)
+    }
+
+    fn selected_text(&self) -> Option<String> {
+        let sel = self.selection?;
+        let pane = self.pane.as_ref()?;
+        let ((sc, sr), (ec, er)) = sel.normalised();
+        let scroll_off = pane.scroll_off;
+        let total      = pane.grid.total_rows();
+        let view_start = total.saturating_sub(pane.grid.height).saturating_sub(scroll_off);
+
+        let mut out = String::new();
+        for row in sr..=er {
+            let src_row = view_start + row;
+            let col_start = if row == sr { sc } else { 0 };
+            let col_end   = if row == er { ec } else { pane.grid.width.saturating_sub(1) };
+            let mut line = String::new();
+            for col in col_start..=col_end {
+                let cell = pane.grid.scrollback_get(col, src_row);
+                line.push(cell.ch);
+            }
+            // Trim trailing spaces from each line.
+            let trimmed = line.trim_end_matches(' ');
+            out.push_str(trimmed);
+            if row < er { out.push('\n'); }
+        }
+        Some(out)
     }
 }
 
@@ -339,10 +406,10 @@ impl ApplicationHandler for App {
                     winit::event::MouseScrollDelta::PixelDelta(pos)   => pos.y as f32 / self.cell_h as f32,
                 };
                 if let Some(pane) = &mut self.pane {
-                    if lines < 0.0 {
-                        pane.scroll_up_view((-lines).ceil() as usize);
+                    if lines > 0.0 {
+                        pane.scroll_up_view(lines.ceil() as usize);
                     } else {
-                        pane.scroll_down_view(lines.ceil() as usize);
+                        pane.scroll_down_view((-lines).ceil() as usize);
                     }
                 }
             }
@@ -352,10 +419,63 @@ impl ApplicationHandler for App {
             }
 
 
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = (position.x, position.y);
+                if self.selecting {
+                    let cell = self.pixel_to_cell(position.x, position.y);
+                    if let Some(sel) = &mut self.selection {
+                        sel.end = cell;
+                    }
+                }
+            }
+
+            WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. } => {
+                match state {
+                    ElementState::Pressed => {
+                        self.selecting = true;
+                        self.selection = None;
+                        let cell = self.pixel_to_cell(self.cursor_pos.0, self.cursor_pos.1);
+                        self.selection = Some(Selection { start: cell, end: cell });
+                    }
+                    ElementState::Released => {
+                        self.selecting = false;
+                        // Discard single-cell (click without drag).
+                        if let Some(sel) = &self.selection {
+                            if sel.start == sel.end {
+                                self.selection = None;
+                            }
+                        }
+                    }
+                }
+            }
+
             WindowEvent::KeyboardInput {
                 event: KeyEvent { logical_key, text, state: ElementState::Pressed, .. }, ..
             } => {
                 let ctrl = self.modifiers.control_key();
+                let cmd  = self.modifiers.super_key(); // Cmd on macOS
+
+                // Cmd+C — copy selection.
+                if cmd {
+                    if let Key::Character(s) = &logical_key {
+                        match s.as_str() {
+                            "c" => {
+                                if let Some(text) = self.selected_text() {
+                                    copy_to_clipboard(&text);
+                                }
+                                return;
+                            }
+                            "v" => {
+                                if let Some(text) = paste_from_clipboard() {
+                                    if let Some(pane) = &mut self.pane { pane.scroll_off = 0; }
+                                    if let Some(pty)  = &mut self.pty  { let _ = pty.write_bytes(text.as_bytes()); }
+                                }
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
 
                 let bytes: Option<Vec<u8>> = if ctrl {
                     // Ctrl+key → control byte. Use logical_key so layout doesn't matter.
@@ -435,7 +555,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 if let (Some(gpu), Some(pane)) = (&mut self.gpu, &self.pane) {
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline);
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection);
                 }
             }
 
@@ -473,16 +593,33 @@ impl TerminalWindow {
 
 // ── software rasterizer ───────────────────────────────────────────────────────
 
+fn copy_to_clipboard(text: &str) {
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+    if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
+        if let Some(stdin) = child.stdin.as_mut() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        let _ = child.wait();
+    }
+}
+
+fn paste_from_clipboard() -> Option<String> {
+    let out = std::process::Command::new("pbpaste").output().ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 fn paint_framebuf(
-    pane:     &Pane,
-    font:     &Font,
-    font_px:  f32,
-    cell_w:   usize,
-    cell_h:   usize,
-    baseline: usize,
-    fb_w:     usize,
-    fb_h:     usize,
-    buf:      &mut [u8],
+    pane:      &Pane,
+    font:      &Font,
+    font_px:   f32,
+    cell_w:    usize,
+    cell_h:    usize,
+    baseline:  usize,
+    fb_w:      usize,
+    fb_h:      usize,
+    buf:       &mut [u8],
+    selection: Option<Selection>,
 ) {
     let bg_default = Color::Default.to_rgba(false);
     buf.chunks_exact_mut(4).for_each(|p| p.copy_from_slice(&bg_default));
@@ -491,7 +628,6 @@ fn paint_framebuf(
     let cursor     = pane.cursor;
     let scroll_off = pane.scroll_off;
     let total      = grid.total_rows();
-    // First scrollback row to show = total - height - scroll_off
     let view_start = total.saturating_sub(grid.height).saturating_sub(scroll_off);
     let scrolling  = scroll_off > 0;
 
@@ -500,14 +636,17 @@ fn paint_framebuf(
         for col in 0..grid.width {
             let cell = *grid.scrollback_get(col, src_row);
 
-            // Cursor only shown when at live bottom and not scrolled away.
-            let is_cursor = !scrolling
-                && col == cursor.col
-                && screen_row == cursor.row
-                && cursor.visible;
+            let is_cursor   = !scrolling && col == cursor.col && screen_row == cursor.row && cursor.visible;
+            let is_selected = selection.map_or(false, |s| s.contains(col, screen_row));
 
-            let fg: [u8; 4] = if is_cursor { cell.bg.to_rgba(false) } else { cell.fg.to_rgba(true) };
-            let bg: [u8; 4] = if is_cursor { [0xcc, 0xcc, 0xcc, 0xff] } else { cell.bg.to_rgba(false) };
+            let (fg, bg): ([u8; 4], [u8; 4]) = if is_cursor {
+                (cell.bg.to_rgba(false), [0xcc, 0xcc, 0xcc, 0xff])
+            } else if is_selected {
+                // Selection highlight: light blue bg, dark fg.
+                ([0x1a, 0x1a, 0x2e, 0xff], [0x52, 0xa4, 0xff, 0xff])
+            } else {
+                (cell.fg.to_rgba(true), cell.bg.to_rgba(false))
+            };
 
             let px = col * cell_w;
             let py = screen_row * cell_h;

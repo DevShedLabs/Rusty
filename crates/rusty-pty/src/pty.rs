@@ -28,7 +28,13 @@ impl Pty {
             pixel_height: size.px_h,
         };
         let pair = sys.openpty(raw)?;
-        let cmd = CommandBuilder::new(shell);
+        let mut cmd = CommandBuilder::new(shell);
+        // Identify ourselves so shells and tools can detect the terminal.
+        cmd.env("TERM_PROGRAM", "rusty");
+        cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+        cmd.env("TERM", "xterm-256color");
+        // Disable macOS Terminal.app session save/restore — it errors in any other terminal.
+        cmd.env("SHELL_SESSION_DID_INIT", "1");
         pair.slave.spawn_command(cmd)?;
 
         let mut reader = pair.master.try_clone_reader()?;
