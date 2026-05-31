@@ -179,6 +179,107 @@ cargo check -p rusty-core
 cargo check -p rusty-hint
 ```
 
+## Roadmap
+
+### Near-term
+
+- **Tabs and split panes** — the layout tree (`rusty-mux`) is already designed for it; each pane is an independent PTY + grid. Keyboard shortcuts to create, navigate, and resize panes.
+- **Git status display** — first-class git context in the prompt area and tab titles: branch name, ahead/behind counts, dirty indicator. Reads via `libgit2` (`rusty-git` crate exists, just needs wiring to the UI).
+- **Font selection** — load any system font by name from `config.toml`. Currently bundled JetBrains Mono only.
+- **Session restore** — serialise the tab/pane layout to disk on quit, restore on next launch. The session serialisation code is already in `rusty-mux`.
+
+### Structured command completion (`rusty-completions`)
+
+The current Tab popup pulls from history, CWD, and PATH. The next step is a full structured completion engine — a port of the [Upterm](https://github.com/railsware/upterm) TypeScript completion model to Rust, extended with user-definable TOML files.
+
+**How it works:**
+
+Each command has a registered `CompletionProvider`. On Tab press, rusty parses the current line, identifies the command, and calls the provider with full context:
+
+```rust
+pub struct CompletionContext {
+    pub cwd:           PathBuf,
+    pub argv:          Vec<String>,   // full tokenised command line
+    pub current_token: String,        // token at cursor
+    pub token_index:   usize,         // which argument position
+}
+
+pub struct Suggestion {
+    pub label:  String,
+    pub detail: Option<String>,       // shown in popup right column
+    pub insert: Option<String>,       // override for what gets inserted
+    pub kind:   SuggestionKind,       // Subcommand | Flag | File | Directory | Value | History
+}
+```
+
+Providers compose — a `git checkout` provider combines live branch names (from libgit2), unstaged files, and static flag definitions.
+
+**Two tiers — no code required for most commands:**
+
+*Tier 1 — TOML definition files.* Drop a file in `~/.config/rusty/completions/` and rusty loads it at startup. Covers subcommands, flags, and static values:
+
+```toml
+# ~/.config/rusty/completions/cargo.toml
+[command]
+name = "cargo"
+
+[[subcommands]]
+name = "build"
+detail = "Compile the current package"
+
+  [[subcommands.flags]]
+  label = "--release"
+  detail = "Build with optimizations"
+
+  [[subcommands.flags]]
+  label = "--target"
+  detail = "Cross-compile for the target triple"
+  takes_value = true
+
+[[subcommands]]
+name = "test"
+detail = "Run the test suite"
+
+  [[subcommands.flags]]
+  label = "--nocapture"
+  detail = "Show stdout from passing tests"
+```
+
+*Tier 2 — Dynamic Rust providers.* For context-aware completions that need live data — `git branch`, `npm run` scripts from `package.json`, docker container names, etc.:
+
+```rust
+#[async_trait]
+pub trait CompletionProvider: Send + Sync {
+    async fn suggest(&self, ctx: &CompletionContext) -> Vec<Suggestion>;
+}
+```
+
+**Built-in providers (porting from Upterm reference):**
+
+| Command | Dynamic sources |
+|---------|----------------|
+| `git` | live branches, remotes, staged/unstaged files, aliases (via libgit2) |
+| `npm` | subcommands + `scripts` from `package.json` in CWD |
+| `brew` | subcommands |
+| `cd`, `ls`, `cp`, `mv`, `rm` | file/directory completions |
+| `find`, `grep`, `tail` | flags |
+| `docker` | container/image names |
+| `cargo` | subcommands + flags |
+
+**User-defined completions** for any tool your team uses — `kubectl`, `gh`, internal CLIs — without waiting for a built-in. The TOML format is intentionally simple enough that a description in a PR is enough to write one.
+
+### Medium-term
+
+- **Full document renderer** — GitHub-style Markdown with `pulldown-cmark` (CommonMark spec, tables, task lists, footnotes), syntax-highlighted code blocks via `syntect` (VS Code themes, 500+ languages), and a proper layout engine with word-wrap, heading sizes, and table column sizing. The current overlay is a placeholder.
+- **SSH integration** — connect to remote hosts and run a full terminal session without leaving rusty. Persistent sessions survive disconnects.
+- **Image rendering** — inline images in the overlay (PNG/JPG via a software decoder, blitted into the framebuffer).
+- **Plugin system** — WASM-based plugins that can hook into PTY output, render custom overlays, and add commands. Dev-awareness features (detect running servers, show ports, scan for outdated runtimes) would live here.
+
+### Platform
+
+- **Linux** — Vulkan backend via `wgpu`. The abstraction layer is in place; needs backend feature flags and `/dev/pts` PTY paths.
+- **Windows** — DX12 backend via `wgpu` + ConPTY. Same abstraction layer.
+
 ## Platform
 
 Currently macOS / Apple Silicon only. The Metal backend is selected at compile time. Linux (Vulkan) and Windows (DX12) support is planned — the abstraction layer is already in place via `wgpu`, it just needs the backend feature flags and platform-specific PTY paths.
