@@ -1,0 +1,13 @@
+[build]
+# Native Apple Silicon target — explicit so CI/cross-compile never defaults to x86
+target = "aarch64-apple-darwin"
+
+[target.aarch64-apple-darwin]
+# Apple's linker is already optimal on macOS; no need for mold here.
+# Uncomment if link times become painful and you install lld via Homebrew:
+# rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld"]
+
+# M3 supports ARMv9 with all Apple Silicon extensions.
+# "apple-m1" is the correct LLVM target CPU for the whole M-series family —
+# M2 and M3 are recognized as supersets and gain their extra instructions automatically.
+rustflags = ["-C", "target-cpu=apple-m1"]

@@ -18,7 +18,9 @@ tokio        = { version = "1", features = ["full"] }
 crossbeam-channel = "0.5"
 portable-pty = "0.8"
 vte          = "0.13"
-wgpu         = "0.20"
+# Metal backend only — we target macOS/Apple Silicon exclusively for now.
+# Disable Vulkan/GL/DX12 to cut compile time and binary size.
+wgpu         = { version = "0.20", default-features = false, features = ["metal", "wgsl"] }
 winit        = "0.29"
 fontdue      = "0.8"
 swash        = "0.1"

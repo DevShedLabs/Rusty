@@ -7,7 +7,8 @@ pub struct Tab {
     pub layout:       Layout,
     pub panes:        HashMap<u32, Pane>,
     pub active_pane:  u32,
-    next_pane_id:     u32,
+    #[allow(dead_code)]
+    next_pane_id: u32,
 }
 
 impl Tab {
