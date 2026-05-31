@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rusty-core     = { path = "../rusty-core" }
-rusty-renderer = { path = "../rusty-renderer" }
-rusty-mux      = { path = "../rusty-mux" }
-rusty-git      = { path = "../rusty-git" }
-rusty-hint     = { path = "../rusty-hint" }
-winit          = { workspace = true }
-anyhow         = { workspace = true }
-tracing        = { workspace = true }
+rusty-core        = { path = "../rusty-core" }
+rusty-renderer    = { path = "../rusty-renderer" }
+rusty-mux         = { path = "../rusty-mux" }
+rusty-git         = { path = "../rusty-git" }
+rusty-hint        = { path = "../rusty-hint" }
+rusty-pty         = { path = "../rusty-pty" }
+winit             = { workspace = true }
+wgpu              = { workspace = true }
+fontdue           = { workspace = true }
+anyhow            = { workspace = true }
+tracing           = { workspace = true }
 crossbeam-channel = { workspace = true }
+pollster          = { workspace = true }

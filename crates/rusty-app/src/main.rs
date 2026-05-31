@@ -7,12 +7,8 @@ fn main() -> anyhow::Result<()> {
 
     tracing::info!("rusty starting");
 
-    // Boot order matches Spec.md §MVP:
-    // 1. Spawn PTY
-    // 2. Create session (mux)
-    // 3. Start render loop (UI)
-
-    rusty_ui::window::TerminalWindow::run();
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    rusty_ui::window::TerminalWindow::run(&shell);
 
     Ok(())
 }

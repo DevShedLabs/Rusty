@@ -43,7 +43,26 @@ impl Grid {
         self.dirty.fill(false);
     }
 
+    pub fn clear(&mut self) {
+        self.cells.fill(Cell::default());
+        self.dirty.fill(true);
+    }
+
+    /// Scroll the grid up by `n` rows, clearing the vacated rows at the bottom.
+    pub fn scroll_up(&mut self, n: usize) {
+        let n = n.min(self.height);
+        let row_bytes = self.width;
+        self.cells.copy_within(n * row_bytes.., 0);
+        let clear_start = (self.height - n) * row_bytes;
+        self.cells[clear_start..].fill(Cell::default());
+        self.dirty.fill(true);
+    }
+
     pub fn resize(&mut self, width: usize, height: usize) {
         *self = Self::new(width, height);
+    }
+
+    pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
+        self.cells.chunks(self.width)
     }
 }

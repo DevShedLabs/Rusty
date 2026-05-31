@@ -6,19 +6,15 @@ pub struct Cell {
     pub fg:    Color,
     pub bg:    Color,
     pub attrs: Attrs,
-    /// Phantom hint text rendered after this cell (type-ahead suggestion).
-    /// Empty string means no hint.
-    pub hint:  bool,
 }
 
 impl Default for Cell {
     fn default() -> Self {
         Self {
             ch:    ' ',
-            fg:    Color::DEFAULT,
-            bg:    Color::DEFAULT,
+            fg:    Color::Default,
+            bg:    Color::Default,
             attrs: Attrs::empty(),
-            hint:  false,
         }
     }
 }

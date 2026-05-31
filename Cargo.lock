@@ -1398,6 +1398,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22686f4785f02a4fcc856d3b3bb19bf6c8160d103f7a99cc258bddd0251dc7f2"
+
+[[package]]
 name = "portable-pty"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1661,10 +1667,10 @@ name = "rusty-pty"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
  "nix 0.28.0",
  "portable-pty",
  "thiserror",
- "tokio",
  "tracing",
 ]
 
@@ -1686,12 +1692,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
+ "fontdue",
+ "pollster",
  "rusty-core",
  "rusty-git",
  "rusty-hint",
  "rusty-mux",
+ "rusty-pty",
  "rusty-renderer",
  "tracing",
+ "wgpu",
  "winit",
 ]
 
