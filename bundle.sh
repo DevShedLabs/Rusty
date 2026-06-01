@@ -3,10 +3,10 @@ set -euo pipefail
 
 APP_NAME="Rusty"
 BUNDLE_ID="com.rusty.terminal"
-VERSION="0.1.3"
+VERSION="0.1.4"
 BINARY="target/release/rusty"
 ICON="crates/rusty-ui/assets/icon.icns"
-OUT="$APP_NAME.app"
+OUT="releases/$APP_NAME.app"
 
 echo "Building release binary..."
 cargo build --release -p rusty-app

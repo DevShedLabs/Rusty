@@ -11,8 +11,8 @@ APP_NAME="Rusty"
 BUNDLE_ID="com.rusty.terminal"
 BINARY="target/release/rusty"
 ICON="crates/rusty-ui/assets/icon.icns"
-APP_OUT="$APP_NAME.app"
-ZIP_OUT="Rusty-macos-$VERSION.zip"
+APP_OUT="releases/$APP_NAME.app"
+ZIP_OUT="releases/Rusty-macos-$VERSION.zip"
 
 echo "==> Bumping version to $VERSION"
 # Update the single workspace version — all crates inherit it.
