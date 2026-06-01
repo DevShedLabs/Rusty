@@ -53,13 +53,13 @@ impl GitInfo {
 
 fn current_branch(repo: &Repository) -> Option<String> {
     let head = repo.head().ok()?;
-    Some(head.shorthand()?.to_owned())
+    Some(head.shorthand().ok()?.to_owned())
 }
 
 fn upstream_counts(repo: &Repository) -> Option<(u32, u32)> {
     let head       = repo.head().ok()?;
     let local_oid  = head.target()?;
-    let branch_name = head.shorthand()?;
+    let branch_name = head.shorthand().ok()?;
     let upstream   = repo.find_branch(
         &format!("origin/{}", branch_name),
         git2::BranchType::Remote,
