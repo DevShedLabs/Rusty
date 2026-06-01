@@ -24,6 +24,10 @@ pub struct Pane {
     last_char:        char,
     /// Application cursor keys mode (CSI ?1h): arrows send SS3 sequences.
     pub app_cursor:   bool,
+    /// Mouse click reporting enabled (CSI ?1000h).
+    pub mouse_report: bool,
+    /// SGR extended mouse encoding (CSI ?1006h).
+    pub mouse_sgr:    bool,
 }
 
 impl Pane {
@@ -37,11 +41,13 @@ impl Pane {
             pen_fg:      Color::Default,
             pen_bg:      Color::Default,
             pen_attrs:   Attrs::empty(),
-            scroll_top:  0,
-            scroll_bot:  rows.saturating_sub(1),
-            autowrap:    true,
-            last_char:   ' ',
-            app_cursor:  false,
+            scroll_top:   0,
+            scroll_bot:   rows.saturating_sub(1),
+            autowrap:     true,
+            last_char:    ' ',
+            app_cursor:   false,
+            mouse_report: false,
+            mouse_sgr:    false,
         }
     }
 
@@ -175,34 +181,40 @@ impl Pane {
 
     fn csi(&mut self, params: &[i64], intermediates: &[u8], action: char) {
         let p = |i: usize, default: i64| params.get(i).copied().filter(|&v| v != 0).unwrap_or(default);
-        // Private mode sequences: CSI ? Pn h/l
+        // Private mode sequences: CSI ? Pn [; Pn ...] h/l
+        // Multiple modes may appear in one sequence (e.g. CSI ?1006;1000h).
         if intermediates == b"?" {
-            match (params.first().copied().unwrap_or(0), action) {
-                (1049, 'h') => {
-                    self.grid.enter_alt_screen();
-                    self.cursor     = rusty_core::cursor::Cursor { col: 0, row: 0, visible: true };
-                    self.scroll_off = 0;
-                    self.scroll_top = 0;
-                    self.scroll_bot = self.grid.height.saturating_sub(1);
-                    self.autowrap   = true;
+            for &param in params {
+                match (param, action) {
+                    (1049, 'h') => {
+                        self.grid.enter_alt_screen();
+                        self.cursor     = rusty_core::cursor::Cursor { col: 0, row: 0, visible: true };
+                        self.scroll_off = 0;
+                        self.scroll_top = 0;
+                        self.scroll_bot = self.grid.height.saturating_sub(1);
+                        self.autowrap   = true;
+                    }
+                    (1049, 'l') => {
+                        self.grid.leave_alt_screen();
+                        self.scroll_off   = 0;
+                        self.scroll_top   = 0;
+                        self.scroll_bot   = self.grid.height.saturating_sub(1);
+                        self.autowrap     = true;
+                        self.mouse_report = false;
+                        self.mouse_sgr    = false;
+                    }
+                    (25,   'l') => self.cursor.visible = false,
+                    (25,   'h') => self.cursor.visible = true,
+                    (7,    'l') => self.autowrap = false,
+                    (7,    'h') => self.autowrap = true,
+                    (1,    'h') => self.app_cursor = true,
+                    (1,    'l') => self.app_cursor = false,
+                    (1000, 'h') => self.mouse_report = true,
+                    (1000, 'l') => self.mouse_report = false,
+                    (1006, 'h') => self.mouse_sgr    = true,
+                    (1006, 'l') => self.mouse_sgr    = false,
+                    _ => {}
                 }
-                (1049, 'l') => {
-                    self.grid.leave_alt_screen();
-                    self.scroll_off = 0;
-                    self.scroll_top = 0;
-                    self.scroll_bot = self.grid.height.saturating_sub(1);
-                    self.autowrap   = true;
-                }
-                (25,   'l') => self.cursor.visible = false,
-                (25,   'h') => self.cursor.visible = true,
-                (7,    'l') => self.autowrap = false,
-                (7,    'h') => self.autowrap = true,
-                (1,    'h') => self.app_cursor = true,
-                (1,    'l') => self.app_cursor = false,
-                // Mouse reporting — acknowledge but don't need to act on it.
-                (1000, 'h') | (1000, 'l') => {}
-                (1006, 'h') | (1006, 'l') => {}
-                _ => {}
             }
             return;
         }

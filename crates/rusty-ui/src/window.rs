@@ -456,6 +456,26 @@ impl App {
         (col, row)
     }
 
+    /// Send an SGR mouse report to the PTY if mouse reporting is enabled.
+    /// `btn`: 0=left, 1=middle, 2=right, 64=wheel-up, 65=wheel-down.
+    /// `press`: true = button down / wheel tick, false = button up.
+    fn send_mouse_report(&mut self, btn: u8, press: bool, x: f64, y: f64) {
+        let reporting = self.pane.as_ref().map_or(false, |p| p.mouse_report);
+        if !reporting { return; }
+        let (col, row) = self.pixel_to_cell(x, y);
+        // SGR: CSI < Cb ; Cx ; Cy M  (press)  or  m  (release)
+        // Cx/Cy are 1-based.
+        let seq = format!("\x1b[<{};{};{}{}",
+            btn,
+            col + 1,
+            row + 1,
+            if press { 'M' } else { 'm' },
+        );
+        if let Some(pty) = &mut self.pty {
+            let _ = pty.write_bytes(seq.as_bytes());
+        }
+    }
+
     fn selected_text(&self) -> Option<String> {
         let sel = self.selection?;
         let pane = self.pane.as_ref()?;
@@ -578,7 +598,16 @@ impl ApplicationHandler for App {
                     else           { *scroll = (*scroll + (-lines).ceil() as usize).min(max_scroll); }
                     return;
                 }
-                // In alt screen (top/htop etc.) forward scroll as arrow keys so the app scrolls.
+                // Mouse wheel reporting (SGR btn 64=up, 65=down).
+                let reporting = self.pane.as_ref().map_or(false, |p| p.mouse_report);
+                if reporting {
+                    let (cx, cy) = self.cursor_pos;
+                    let n = lines.abs().ceil() as usize;
+                    let btn = if lines > 0.0 { 64u8 } else { 65u8 };
+                    for _ in 0..n { self.send_mouse_report(btn, true, cx, cy); }
+                    return;
+                }
+                // In alt screen without mouse reporting, forward scroll as arrow keys.
                 if self.pane.as_ref().map_or(false, |p| p.grid.in_alt_screen) {
                     let n = lines.abs().ceil() as usize;
                     let app = self.pane.as_ref().map_or(false, |p| p.app_cursor);
@@ -607,6 +636,12 @@ impl ApplicationHandler for App {
                 self.cursor_pos = (position.x, position.y);
                 let fb_h = self.gpu.as_ref().map(|g| g.fb_h).unwrap_or(1);
                 let scroll_zone = self.cell_h * 2; // 2-row trigger zone at edges
+
+                // Send motion report when dragging with left button held (btn 0 + motion flag 32).
+                if self.selecting && self.pane.as_ref().map_or(false, |p| p.mouse_report) {
+                    self.send_mouse_report(32, true, position.x, position.y);
+                    return;
+                }
 
                 if self.overlay.is_some() {
                     if self.overlay_sel_start.is_some() {
@@ -642,11 +677,20 @@ impl ApplicationHandler for App {
                 }
             }
 
-            WindowEvent::MouseInput { state, button: winit::event::MouseButton::Left, .. } => {
-                if self.overlay.is_some() {
+            WindowEvent::MouseInput { state, button, .. } => {
+                let btn_code = match button {
+                    winit::event::MouseButton::Left   => 0u8,
+                    winit::event::MouseButton::Middle => 1u8,
+                    winit::event::MouseButton::Right  => 2u8,
+                    _ => return,
+                };
+                let (cx, cy) = self.cursor_pos;
+                let press = state == ElementState::Pressed;
+
+                if self.overlay.is_some() && btn_code == 0 {
                     match state {
                         ElementState::Pressed => {
-                            let screen_row = ((self.cursor_pos.1 as usize).saturating_sub(self.top_inset) / self.cell_h).saturating_sub(1);
+                            let screen_row = ((cy as usize).saturating_sub(self.top_inset) / self.cell_h).saturating_sub(1);
                             self.overlay_sel_start = Some(screen_row);
                             self.overlay_sel = Some((screen_row, screen_row));
                         }
@@ -654,19 +698,31 @@ impl ApplicationHandler for App {
                             self.overlay_sel_start = None;
                         }
                     }
-                } else {
+                    return;
+                }
+
+                // Titlebar drag zone — left button press only.
+                if btn_code == 0 && press && cy as usize <= self.top_inset {
+                    if let Some(win) = &self.window {
+                        let _ = win.drag_window();
+                    }
+                    return;
+                }
+
+                // If mouse reporting is active, forward to PTY and skip selection.
+                let reporting = self.pane.as_ref().map_or(false, |p| p.mouse_report);
+                if reporting {
+                    self.send_mouse_report(btn_code, press, cx, cy);
+                    return;
+                }
+
+                // Normal selection handling (left button only).
+                if btn_code == 0 {
                     match state {
                         ElementState::Pressed => {
-                            // Clicks in the titlebar inset zone drag the window instead of selecting.
-                            if self.cursor_pos.1 as usize <= self.top_inset {
-                                if let Some(win) = &self.window {
-                                    let _ = win.drag_window();
-                                }
-                                return;
-                            }
                             self.selecting = true;
                             self.selection = None;
-                            let cell = self.pixel_to_cell(self.cursor_pos.0, self.cursor_pos.1);
+                            let cell = self.pixel_to_cell(cx, cy);
                             self.selection = Some(Selection { start: cell, end: cell });
                         }
                         ElementState::Released => {
