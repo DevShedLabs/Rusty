@@ -490,9 +490,11 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        // Build the menu here — winit has initialized NSApp by the time resumed() fires.
+        // Build the menu and set the app icon — NSApp is live by the time resumed() fires.
         if self.menu.is_none() {
             self.menu = Some(build_menu());
+            #[cfg(target_os = "macos")]
+            set_app_icon();
         }
 
         let opacity = self.config.window.opacity.clamp(0.0, 1.0);
@@ -1091,6 +1093,32 @@ fn show_about_panel() {
         let dict = NSDictionary::from_slices(keys, vals);
 
         unsafe { app.orderFrontStandardAboutPanelWithOptions(&*dict) };
+    });
+}
+
+// ── app icon ──────────────────────────────────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+fn set_app_icon() {
+    use objc2::rc::autoreleasepool;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    const ICON_BYTES: &[u8] = include_bytes!("../assets/icon.icns");
+
+    autoreleasepool(|_pool| {
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let data = unsafe {
+            NSData::initWithBytes_length(
+                mtm.alloc::<NSData>(),
+                ICON_BYTES.as_ptr() as *const std::ffi::c_void,
+                ICON_BYTES.len(),
+            )
+        };
+        if let Some(image) = NSImage::initWithData(mtm.alloc::<NSImage>(), &data) {
+            let app = unsafe { NSApplication::sharedApplication(mtm) };
+            unsafe { app.setApplicationIconImage(Some(&image)) };
+        }
     });
 }
 
