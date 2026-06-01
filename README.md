@@ -1,6 +1,12 @@
 # Rusty
 
+![Rusty terminal emulator screenshot](rustyterm.svg)
+
 A next-generation terminal emulator for macOS, written in Rust.
+
+![Version](https://img.shields.io/github/v/tag/DevShedLabs/rusty?label=version&sort=semver)
+![License](https://img.shields.io/github/license/DevShedLabs/devscan)
+![Go](https://img.shields.io/badge/built%20with-Rust-00ADD8)
 
 ## What makes it different
 

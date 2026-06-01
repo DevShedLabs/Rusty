@@ -1,0 +1,18 @@
+<svg width="320" height="96" viewBox="0 0 320 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background (optional, remove if needed) -->
+  <rect x="0" y="0" width="320" height="96" rx="12" fill="#0B0D10"></rect>
+
+  <!-- Terminal Icon Container -->
+  <rect x="16" y="16" width="64" height="64" rx="10" fill="#12161B" stroke="#FF6A3D" stroke-width="2"></rect>
+
+  <!-- Prompt symbol > -->
+  <path d="M34 40 L46 48 L34 56" stroke="#FFB26B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+
+  <!-- Cursor underscore -->
+  <rect x="50" y="56" width="14" height="3" rx="1.5" fill="#FF6A3D"></rect>
+
+  <!-- Wordmark -->
+  <text x="100" y="58" fill="#D6E2F0" font-family="JetBrains Mono, monospace" font-size="28" letter-spacing="0.5">
+    Rusty<tspan fill="#FF6A3D">Term</tspan>
+  </text>
+</svg>
