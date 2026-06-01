@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use fontdue::{Font, FontSettings};
+use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use rusty_config::Config;
 use rusty_core::{Color, Grid};
 use rusty_hint::HintEngine;
@@ -19,6 +20,72 @@ use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS, WindowA
 
 const FONT_SIZE: f32 = 16.0;
 const FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
+
+// ── menu ──────────────────────────────────────────────────────────────────────
+
+struct AppMenu {
+    about:         MenuItem,
+    check_updates: MenuItem,
+    update_now:    MenuItem,
+}
+
+fn build_menu() -> AppMenu {
+    let about         = MenuItem::new("About Rusty",           true, None);
+    let check_updates = MenuItem::new("Check for Updates…",    true, None);
+    let update_now    = MenuItem::new("Update Now",             false, None);
+
+    let app_menu = Submenu::with_items(
+        "Rusty",
+        true,
+        &[
+            &about,
+            &PredefinedMenuItem::separator(),
+            &check_updates,
+            &update_now,
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::quit(None),
+        ],
+    ).expect("app submenu");
+
+    let edit_menu = Submenu::with_items(
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(None),
+            &PredefinedMenuItem::redo(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::cut(None),
+            &PredefinedMenuItem::copy(None),
+            &PredefinedMenuItem::paste(None),
+            &PredefinedMenuItem::select_all(None),
+        ],
+    ).expect("edit submenu");
+
+    let window_menu = Submenu::with_items(
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(None),
+            &PredefinedMenuItem::maximize(None),
+            &PredefinedMenuItem::fullscreen(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::bring_all_to_front(None),
+        ],
+    ).expect("window submenu");
+
+    let menu = Menu::new();
+    menu.append_items(&[&app_menu, &edit_menu, &window_menu])
+        .expect("menu append");
+
+    #[cfg(target_os = "macos")]
+    menu.init_for_nsapp();
+
+    AppMenu { about, check_updates, update_now }
+}
 
 // ── cell measurement ─────────────────────────────────────────────────────────
 
@@ -326,6 +393,7 @@ struct App {
     gpu:        Option<Gpu>,
     window:     Option<Arc<Window>>,
     proxy:      EventLoopProxy<()>,
+    menu:       Option<AppMenu>,
     pty:        Option<Pty>,
     pane:       Option<Pane>,
     hint:       HintEngine,
@@ -363,6 +431,7 @@ impl App {
             gpu:        None,
             window:     None,
             proxy,
+            menu:       None,
             pty:        None,
             pane:       None,
             hint:       HintEngine::new(),
@@ -421,6 +490,11 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // Build the menu here — winit has initialized NSApp by the time resumed() fires.
+        if self.menu.is_none() {
+            self.menu = Some(build_menu());
+        }
+
         let opacity = self.config.window.opacity.clamp(0.0, 1.0);
         let attrs = {
             let base = WindowAttributes::default()
@@ -907,6 +981,45 @@ impl ApplicationHandler for App {
             }
         }
 
+        // ── Menu events ───────────────────────────────────────────────────────
+        if let Some(menu) = &self.menu {
+            while let Ok(event) = MenuEvent::receiver().try_recv() {
+                let id = &event.id;
+                if id == menu.about.id() {
+                    #[cfg(target_os = "macos")]
+                    show_about_panel();
+                } else if id == menu.check_updates.id() {
+                    std::thread::spawn(|| {
+                        match crate::update::check() {
+                            Ok(Some(tag)) => show_alert(
+                                "Update Available",
+                                &format!("Version {tag} is available.\nUse Rusty → Update Now to install, then restart."),
+                            ),
+                            Ok(None) => show_alert(
+                                "Up to Date",
+                                &format!("You're running the latest version ({}).", crate::update::CURRENT),
+                            ),
+                            Err(e) => show_alert("Update Check Failed", &format!("{e}")),
+                        }
+                    });
+                } else if id == menu.update_now.id() {
+                    std::thread::spawn(|| {
+                        match crate::update::install() {
+                            Ok(crate::update::UpdateStatus::Updated { to, .. }) => show_alert(
+                                "Update Installed",
+                                &format!("Updated to {to}. Restart Rusty to use the new version."),
+                            ),
+                            Ok(crate::update::UpdateStatus::AlreadyLatest) => show_alert(
+                                "Up to Date",
+                                &format!("You're already on the latest version ({}).", crate::update::CURRENT),
+                            ),
+                            Err(e) => show_alert("Update Failed", &format!("{e}")),
+                        }
+                    });
+                }
+            }
+        }
+
         if dirty {
             if let Some(win) = &self.window {
                 win.request_redraw();
@@ -936,6 +1049,49 @@ impl TerminalWindow {
         let mut app = App::new(shell, config, proxy);
         event_loop.run_app(&mut app).expect("event loop error");
     }
+}
+
+// ── native alert ──────────────────────────────────────────────────────────────
+
+fn show_alert(title: &str, message: &str) {
+    // Escape single quotes for AppleScript string safety.
+    let title   = title.replace('\'', "'\\''");
+    let message = message.replace('\'', "'\\''");
+    let script  = format!(
+        "display dialog \"{message}\" with title \"{title}\" buttons {{\"OK\"}} default button \"OK\"",
+    );
+    let _ = std::process::Command::new("osascript")
+        .arg("-e").arg(&script)
+        .status();
+}
+
+// ── about panel ───────────────────────────────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+fn show_about_panel() {
+    use objc2::rc::autoreleasepool;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::{MainThreadMarker, NSDictionary, NSString};
+
+    autoreleasepool(|_pool| {
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let app = unsafe { NSApplication::sharedApplication(mtm) };
+
+        let version = crate::update::CURRENT;
+
+        let name_key = NSString::from_str("ApplicationName");
+        let name_val = NSString::from_str("Rusty");
+        let ver_key  = NSString::from_str("ApplicationVersion");
+        let ver_val  = NSString::from_str(version);
+
+        // orderFrontStandardAboutPanelWithOptions expects NSDictionary<NSString, AnyObject>
+        let keys: &[&NSString]   = &[&*name_key, &*ver_key];
+        let vals: &[&AnyObject]  = &[name_val.as_ref(), ver_val.as_ref()];
+        let dict = NSDictionary::from_slices(keys, vals);
+
+        unsafe { app.orderFrontStandardAboutPanelWithOptions(&*dict) };
+    });
 }
 
 // ── software rasterizer ───────────────────────────────────────────────────────
