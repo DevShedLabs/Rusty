@@ -15,7 +15,7 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 #[cfg(target_os = "macos")]
-use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS, WindowAttributesExtMacOS};
 
 const FONT_SIZE: f32 = 16.0;
 const FONT_BYTES: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
@@ -209,8 +209,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize, Option<(usize,usize)>)>) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, top_inset: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize, Option<(usize,usize)>)>) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, top_inset, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -302,6 +302,13 @@ impl Selection {
     }
 }
 
+/// Logical pixels to reserve at the top of the window for the macOS traffic light buttons
+/// when running with a transparent/hidden titlebar.
+#[cfg(target_os = "macos")]
+const TITLEBAR_INSET_LOGICAL: f64 = 28.0;
+#[cfg(not(target_os = "macos"))]
+const TITLEBAR_INSET_LOGICAL: f64 = 0.0;
+
 struct App {
     shell:      String,
     config:     Config,
@@ -324,6 +331,8 @@ struct App {
     cell_w:     usize,
     cell_h:     usize,
     baseline:   usize,
+    /// Physical pixels to skip at the top of the framebuffer (traffic light zone).
+    top_inset:  usize,
     modifiers:  ModifiersState,
     selection:  Option<Selection>,
     selecting:  bool,
@@ -354,6 +363,7 @@ impl App {
             cell_w:     8,
             cell_h:     16,
             baseline:   13,
+            top_inset:  0,
             modifiers:  ModifiersState::default(),
             selection:  None,
             selecting:  false,
@@ -363,7 +373,7 @@ impl App {
 
     fn pixel_to_cell(&self, x: f64, y: f64) -> (usize, usize) {
         let col = (x as usize / self.cell_w).min(self.pane.as_ref().map_or(0, |p| p.grid.width.saturating_sub(1)));
-        let row = (y as usize / self.cell_h).min(self.pane.as_ref().map_or(0, |p| p.grid.height.saturating_sub(1)));
+        let row = ((y as usize).saturating_sub(self.top_inset) / self.cell_h).min(self.pane.as_ref().map_or(0, |p| p.grid.height.saturating_sub(1)));
         (col, row)
     }
 
@@ -396,19 +406,29 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let attrs = WindowAttributes::default()
-            .with_title("rusty")
-            .with_inner_size(winit::dpi::LogicalSize::new(1024u32, 768u32));
+        let attrs = {
+            let base = WindowAttributes::default()
+                .with_title("rusty")
+                .with_inner_size(winit::dpi::LogicalSize::new(1024u32, 768u32));
+            #[cfg(target_os = "macos")]
+            let base = base
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+                .with_title_hidden(true)
+                .with_movable_by_window_background(true);
+            base
+        };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
 
         let scale    = window.scale_factor() as f32;
         self.font_px = self.config.font.size * scale;
         (self.cell_w, self.cell_h, self.baseline) = measure_cell(&self.font, self.font_px);
-        tracing::info!("scale={scale} font_px={} cell={}×{} baseline={}", self.font_px, self.cell_w, self.cell_h, self.baseline);
+        self.top_inset = (TITLEBAR_INSET_LOGICAL * window.scale_factor()).round() as usize;
+        tracing::info!("scale={scale} font_px={} cell={}×{} baseline={} top_inset={}", self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset);
 
         let phys = window.inner_size();
         let cols = (phys.width  as usize / self.cell_w).max(1);
-        let rows = (phys.height as usize / self.cell_h).max(1);
+        let rows = ((phys.height as usize).saturating_sub(self.top_inset) / self.cell_h).max(1);
 
         let pty = Pty::spawn(&self.shell, PtySize {
             cols: cols as u16, rows: rows as u16,
@@ -431,7 +451,7 @@ impl ApplicationHandler for App {
                     gpu.resize(phys.width, phys.height);
                 }
                 let cols = (phys.width  as usize / self.cell_w).max(1);
-                let rows = (phys.height as usize / self.cell_h).max(1);
+                let rows = ((phys.height as usize).saturating_sub(self.top_inset) / self.cell_h).max(1);
                 if let Some(pane) = &mut self.pane {
                     pane.resize(cols, rows);
                 }
@@ -476,7 +496,7 @@ impl ApplicationHandler for App {
 
                 if self.overlay.is_some() {
                     if self.overlay_sel_start.is_some() {
-                        let screen_row = (position.y as usize / self.cell_h).saturating_sub(1);
+                        let screen_row = ((position.y as usize).saturating_sub(self.top_inset) / self.cell_h).saturating_sub(1);
                         if let Some(start) = self.overlay_sel_start {
                             let lo = start.min(screen_row);
                             let hi = start.max(screen_row);
@@ -512,7 +532,7 @@ impl ApplicationHandler for App {
                 if self.overlay.is_some() {
                     match state {
                         ElementState::Pressed => {
-                            let screen_row = (self.cursor_pos.1 as usize / self.cell_h).saturating_sub(1);
+                            let screen_row = ((self.cursor_pos.1 as usize).saturating_sub(self.top_inset) / self.cell_h).saturating_sub(1);
                             self.overlay_sel_start = Some(screen_row);
                             self.overlay_sel = Some((screen_row, screen_row));
                         }
@@ -824,7 +844,7 @@ impl ApplicationHandler for App {
                         .map(|h| h.ghost(&self.hint.line).to_owned())
                         .unwrap_or_default();
                     let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll, self.overlay_sel));
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
                 }
             }
 
@@ -975,6 +995,7 @@ fn paint_framebuf(
     cell_w:    usize,
     cell_h:    usize,
     baseline:  usize,
+    top_inset: usize,
     fb_w:      usize,
     fb_h:      usize,
     buf:       &mut [u8],
@@ -1088,7 +1109,7 @@ fn paint_framebuf(
             };
 
             let px = col * cell_w;
-            let py = screen_row * cell_h;
+            let py = top_inset + screen_row * cell_h;
 
             for dy in 0..cell_h {
                 let y = py + dy;
@@ -1137,7 +1158,7 @@ fn paint_framebuf(
         let cursor = pane.cursor;
         let mut ghost_col = cursor.col + 1; // start one cell after cursor
         let ghost_row = cursor.row;
-        let py = ghost_row * cell_h;
+        let py = top_inset + ghost_row * cell_h;
 
         for ch in ghost.chars() {
             if ghost_col >= pane.grid.width { break; }
@@ -1188,7 +1209,7 @@ fn paint_framebuf(
     if let Some(popup) = popup {
         let cursor      = pane.cursor;
         let popup_x     = cursor.col * cell_w;
-        let popup_y_top = (cursor.row + 1) * cell_h; // just below cursor row
+        let popup_y_top = top_inset + (cursor.row + 1) * cell_h; // just below cursor row
 
         // Popup dimensions in cells.
         let max_visible = 8usize;
