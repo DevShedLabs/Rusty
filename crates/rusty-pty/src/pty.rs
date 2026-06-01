@@ -16,6 +16,8 @@ pub struct Pty {
     writer: Box<dyn std::io::Write + Send>,
     /// Bytes received from the shell.
     pub rx: Receiver<Vec<u8>>,
+    /// Fires (with no payload) whenever bytes arrive — safe to clone for a watcher thread.
+    pub notify: Receiver<()>,
 }
 
 impl Pty {
@@ -41,6 +43,7 @@ impl Pty {
         let writer = pair.master.take_writer()?;
 
         let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = bounded(256);
+        let (notify_tx, notify): (Sender<()>, Receiver<()>) = bounded(1);
 
         thread::Builder::new()
             .name("pty-reader".into())
@@ -53,13 +56,16 @@ impl Pty {
                             if tx.send(buf[..n].to_vec()).is_err() {
                                 break;
                             }
+                            // Best-effort notify — if the channel is already full (capacity 1)
+                            // the watcher is already awake, so dropping the send is fine.
+                            let _ = notify_tx.try_send(());
                         }
                         Err(_) => break,
                     }
                 }
             })?;
 
-        Ok(Self { master: pair.master, writer, rx })
+        Ok(Self { master: pair.master, writer, rx, notify })
     }
 
     pub fn write_bytes(&mut self, data: &[u8]) -> Result<()> {

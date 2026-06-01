@@ -10,7 +10,7 @@ use rusty_pty::{Pty, PtySize};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, KeyEvent, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     keyboard::{Key, ModifiersState, NamedKey},
     window::{Window, WindowAttributes, WindowId},
 };
@@ -325,6 +325,7 @@ struct App {
     font:       Font,
     gpu:        Option<Gpu>,
     window:     Option<Arc<Window>>,
+    proxy:      EventLoopProxy<()>,
     pty:        Option<Pty>,
     pane:       Option<Pane>,
     hint:       HintEngine,
@@ -352,7 +353,7 @@ struct App {
 }
 
 impl App {
-    fn new(shell: &str, config: Config) -> Self {
+    fn new(shell: &str, config: Config, proxy: EventLoopProxy<()>) -> Self {
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("font");
         let font_size = config.font.size;
         Self {
@@ -361,6 +362,7 @@ impl App {
             font,
             gpu:        None,
             window:     None,
+            proxy,
             pty:        None,
             pane:       None,
             hint:       HintEngine::new(),
@@ -451,9 +453,23 @@ impl ApplicationHandler for App {
             px_w: phys.width as u16, px_h: phys.height as u16,
         }).expect("pty spawn");
 
+        // Wake the event loop whenever PTY bytes arrive. Uses a separate notify
+        // channel so the data bytes stay exclusively on pty.rx for the main thread.
+        let watcher_notify = pty.notify.clone();
+        let watcher_proxy  = self.proxy.clone();
+        std::thread::Builder::new()
+            .name("pty-watcher".into())
+            .spawn(move || {
+                while watcher_notify.recv().is_ok() {
+                    let _ = watcher_proxy.send_event(());
+                }
+            })
+            .expect("pty-watcher thread");
+
         self.gpu    = Some(Gpu::new(window.clone(), opacity));
         self.pane   = Some(Pane::new(0, cols, rows));
         self.pty    = Some(pty);
+        window.request_redraw();
         self.window = Some(window);
     }
 
@@ -823,38 +839,6 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                // Drain PTY output into pane, collect side-channel events.
-                if let (Some(pty), Some(pane)) = (&self.pty, &mut self.pane) {
-                    while let Ok(bytes) = pty.rx.try_recv() {
-                        for event in pane.process_with_events(&bytes) {
-                            match event {
-                                rusty_mux::pane::PaneEvent::Cwd(payload) => {
-                                    self.hint.set_cwd_from_osc7(&payload);
-                                }
-                            }
-                        }
-                        if self.pending_render.is_some() {
-                            self.capture_buf.extend_from_slice(&bytes);
-                            self.capture_last_byte = Some(std::time::Instant::now());
-                        }
-                    }
-
-                    // Finalise render after 200 ms of PTY silence (command done outputting).
-                    if self.pending_render.is_some() {
-                        let idle = self.capture_last_byte
-                            .map(|t| t.elapsed().as_millis() >= 200)
-                            .unwrap_or(false);
-                        if idle {
-                            let trigger = self.pending_render.take().unwrap();
-                            let raw = String::from_utf8_lossy(&self.capture_buf).into_owned();
-                            tracing::info!("render finalised: {:?}, {} bytes", trigger, raw.len());
-                            let doc = build_render_doc(&trigger, &raw, pane.grid.width);
-                            self.overlay = Some((doc, 0));
-                            self.capture_buf.clear();
-                            self.capture_last_byte = None;
-                        }
-                    }
-                }
                 if let (Some(gpu), Some(pane)) = (&mut self.gpu, &self.pane) {
                     let ghost = self.hint.hint()
                         .map(|h| h.ghost(&self.hint.line).to_owned())
@@ -862,16 +846,74 @@ impl ApplicationHandler for App {
                     let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll, self.overlay_sel));
                     gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset, self.left_inset, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
                 }
+                return; // don't request another redraw below
             }
 
             _ => {}
         }
-    }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Any non-redraw event (input, scroll, resize, mouse) dirties the frame.
         if let Some(win) = &self.window {
             win.request_redraw();
         }
+    }
+
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: ()) {
+        // PTY watcher woke us — drain bytes and redraw in about_to_wait.
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let mut dirty = false;
+
+        if let (Some(pty), Some(pane)) = (&self.pty, &mut self.pane) {
+            while let Ok(bytes) = pty.rx.try_recv() {
+                for event in pane.process_with_events(&bytes) {
+                    match event {
+                        rusty_mux::pane::PaneEvent::Cwd(payload) => {
+                            self.hint.set_cwd_from_osc7(&payload);
+                        }
+                    }
+                }
+                if self.pending_render.is_some() {
+                    self.capture_buf.extend_from_slice(&bytes);
+                    self.capture_last_byte = Some(std::time::Instant::now());
+                }
+                dirty = true;
+            }
+
+            // Finalise render after 200 ms of PTY silence.
+            if self.pending_render.is_some() {
+                let idle = self.capture_last_byte
+                    .map(|t| t.elapsed().as_millis() >= 200)
+                    .unwrap_or(false);
+                if idle {
+                    let trigger = self.pending_render.take().unwrap();
+                    let raw = String::from_utf8_lossy(&self.capture_buf).into_owned();
+                    tracing::info!("render finalised: {:?}, {} bytes", trigger, raw.len());
+                    let doc = build_render_doc(&trigger, &raw, pane.grid.width);
+                    self.overlay = Some((doc, 0));
+                    self.capture_buf.clear();
+                    self.capture_last_byte = None;
+                    dirty = true;
+                } else if self.capture_last_byte.is_some() {
+                    // Still waiting — wake again after the remaining time.
+                    let elapsed = self.capture_last_byte.unwrap().elapsed().as_millis() as u64;
+                    let remaining = 200u64.saturating_sub(elapsed);
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(
+                        std::time::Instant::now() + std::time::Duration::from_millis(remaining),
+                    ));
+                    return;
+                }
+            }
+        }
+
+        if dirty {
+            if let Some(win) = &self.window {
+                win.request_redraw();
+            }
+        }
+
+        event_loop.set_control_flow(ControlFlow::Wait);
     }
 }
 
@@ -890,8 +932,8 @@ impl TerminalWindow {
         #[cfg(not(target_os = "macos"))]
         let event_loop = EventLoop::new().expect("event loop");
 
-        event_loop.set_control_flow(ControlFlow::Poll);
-        let mut app = App::new(shell, config);
+        let proxy = event_loop.create_proxy();
+        let mut app = App::new(shell, config, proxy);
         event_loop.run_app(&mut app).expect("event loop error");
     }
 }
