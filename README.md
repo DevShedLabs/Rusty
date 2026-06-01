@@ -161,19 +161,35 @@ rusty-app → rusty-ui ──→ rusty-mux   ──→ rusty-core
 
 ## Install
 
-**System-wide install** (builds and places `rusty` in `~/.cargo/bin`):
+**Download** the latest `Rusty-macos.zip` from [Releases](https://github.com/DevShedLabs/rusty/releases), unzip, and drag `Rusty.app` to `/Applications`.
+
+**First launch — Gatekeeper warning**
+
+Because Rusty is not yet notarized with Apple, macOS will block it on the first open. To get past this, right-click (or Control-click) `Rusty.app` and choose **Open**, then click **Open** in the dialog. You only need to do this once.
+
+Alternatively, from the terminal:
 
 ```bash
-cargo install --path crates/rusty-app
+xattr -d com.apple.quarantine /Applications/Rusty.app
 ```
 
-`~/.cargo/bin` is in `$PATH` after a standard `rustup` install, so `rusty` works from anywhere immediately. Re-run the same command to update.
+Then double-click as normal.
 
-**Build only:**
+---
+
+**Build from source:**
 
 ```bash
 cargo build --release -p rusty-app
 ./target/release/rusty
+```
+
+**Build a `.app` bundle:**
+
+```bash
+./bundle.sh           # produces Rusty.app in the project root
+open Rusty.app        # test it
+cp -r Rusty.app /Applications/
 ```
 
 **Prerequisites:** Rust stable 1.75+, a C compiler (Xcode Command Line Tools on macOS).
