@@ -578,6 +578,17 @@ impl ApplicationHandler for App {
                     else           { *scroll = (*scroll + (-lines).ceil() as usize).min(max_scroll); }
                     return;
                 }
+                // In alt screen (top/htop etc.) forward scroll as arrow keys so the app scrolls.
+                if self.pane.as_ref().map_or(false, |p| p.grid.in_alt_screen) {
+                    let n = lines.abs().ceil() as usize;
+                    let app = self.pane.as_ref().map_or(false, |p| p.app_cursor);
+                    let (up, dn) = if app { (b"\x1bOA".as_ref(), b"\x1bOB".as_ref()) } else { (b"\x1b[A".as_ref(), b"\x1b[B".as_ref()) };
+                    let seq = if lines > 0.0 { up } else { dn };
+                    if let Some(pty) = &mut self.pty {
+                        for _ in 0..n { let _ = pty.write_bytes(seq); }
+                    }
+                    return;
+                }
                 if let Some(pane) = &mut self.pane {
                     if lines > 0.0 {
                         pane.scroll_up_view(lines.ceil() as usize);
@@ -877,10 +888,10 @@ impl ApplicationHandler for App {
                         }
                         Key::Named(NamedKey::Escape)       => { self.hint.update_line(""); Some(b"\x1b".to_vec()) }
                         Key::Named(NamedKey::Tab)          => Some(b"\t".to_vec()),
-                        Key::Named(NamedKey::ArrowUp)      => { self.hint.update_line(""); Some(b"\x1b[A".to_vec()) }
-                        Key::Named(NamedKey::ArrowDown)    => { self.hint.update_line(""); Some(b"\x1b[B".to_vec()) }
-                        Key::Named(NamedKey::ArrowRight)   => Some(b"\x1b[C".to_vec()),
-                        Key::Named(NamedKey::ArrowLeft)    => Some(b"\x1b[D".to_vec()),
+                        Key::Named(NamedKey::ArrowUp)    => { self.hint.update_line(""); Some(if self.pane.as_ref().map_or(false, |p| p.app_cursor) { b"\x1bOA".to_vec() } else { b"\x1b[A".to_vec() }) }
+                        Key::Named(NamedKey::ArrowDown)  => { self.hint.update_line(""); Some(if self.pane.as_ref().map_or(false, |p| p.app_cursor) { b"\x1bOB".to_vec() } else { b"\x1b[B".to_vec() }) }
+                        Key::Named(NamedKey::ArrowRight) => Some(if self.pane.as_ref().map_or(false, |p| p.app_cursor) { b"\x1bOC".to_vec() } else { b"\x1b[C".to_vec() }),
+                        Key::Named(NamedKey::ArrowLeft)  => Some(if self.pane.as_ref().map_or(false, |p| p.app_cursor) { b"\x1bOD".to_vec() } else { b"\x1b[D".to_vec() }),
                         Key::Named(NamedKey::Home)         => Some(b"\x1b[H".to_vec()),
                         Key::Named(NamedKey::End)          => Some(b"\x1b[F".to_vec()),
                         Key::Named(NamedKey::PageUp)       => Some(b"\x1b[5~".to_vec()),
