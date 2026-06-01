@@ -57,11 +57,6 @@ fn build_menu() -> AppMenu {
         &[
             &PredefinedMenuItem::undo(None),
             &PredefinedMenuItem::redo(None),
-            &PredefinedMenuItem::separator(),
-            &PredefinedMenuItem::cut(None),
-            &PredefinedMenuItem::copy(None),
-            &PredefinedMenuItem::paste(None),
-            &PredefinedMenuItem::select_all(None),
         ],
     ).expect("edit submenu");
 
@@ -508,7 +503,7 @@ impl ApplicationHandler for App {
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true)
                 .with_title_hidden(true)
-                .with_movable_by_window_background(true);
+                .with_movable_by_window_background(false);
             base
         };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
@@ -651,6 +646,13 @@ impl ApplicationHandler for App {
                 } else {
                     match state {
                         ElementState::Pressed => {
+                            // Clicks in the titlebar inset zone drag the window instead of selecting.
+                            if self.cursor_pos.1 as usize <= self.top_inset {
+                                if let Some(win) = &self.window {
+                                    let _ = win.drag_window();
+                                }
+                                return;
+                            }
                             self.selecting = true;
                             self.selection = None;
                             let cell = self.pixel_to_cell(self.cursor_pos.0, self.cursor_pos.1);
