@@ -161,6 +161,21 @@ impl Default for ScrollConfig {
     }
 }
 
+// ── Window ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowConfig {
+    /// Background opacity: 0.0 = fully transparent, 1.0 = fully opaque.
+    pub opacity: f32,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self { opacity: 1.0 }
+    }
+}
+
 // ── Top-level config ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +184,7 @@ pub struct Config {
     pub palette:  Palette,
     pub font:     FontConfig,
     pub scroll:   ScrollConfig,
+    pub window:   WindowConfig,
 }
 
 impl Default for Config {
@@ -177,6 +193,7 @@ impl Default for Config {
             palette: Palette::default(),
             font:    FontConfig::default(),
             scroll:  ScrollConfig::default(),
+            window:  WindowConfig::default(),
         }
     }
 }
@@ -227,5 +244,8 @@ const HEADER: &str = "\
 # rusty terminal configuration
 # All colors are hex strings: \"#rrggbb\"
 # Edit this file and restart rusty to apply changes.
+#
+# [window]
+# opacity = 1.0   # 0.0 (transparent) → 1.0 (opaque)
 
 ";

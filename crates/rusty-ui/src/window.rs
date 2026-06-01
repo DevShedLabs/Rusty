@@ -78,10 +78,11 @@ struct Gpu {
     pub fb_w:     usize,
     pub fb_h:     usize,
     framebuf:     Vec<u8>,
+    opacity:      f32,
 }
 
 impl Gpu {
-    fn new(window: Arc<Window>) -> Self {
+    fn new(window: Arc<Window>, opacity: f32) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::METAL,
             ..Default::default()
@@ -112,11 +113,17 @@ impl Gpu {
             }).join().expect("device thread")
         });
 
-        let caps          = surface.get_capabilities(&adapter);
-        let surface_fmt   = caps.formats[0];
-        let alpha_mode    = caps.alpha_modes[0];
-        let phys          = window.inner_size();
-        tracing::info!("surface fmt={surface_fmt:?} alpha={alpha_mode:?} phys={phys:?}");
+        let caps        = surface.get_capabilities(&adapter);
+        let surface_fmt = caps.formats[0];
+        // PostMultiplied sets setOpaque(false) on the CAMetalLayer so the OS
+        // compositor blends the window against the desktop using straight alpha.
+        let alpha_mode = if opacity < 1.0 && caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::PostMultiplied) {
+            wgpu::CompositeAlphaMode::PostMultiplied
+        } else {
+            caps.alpha_modes[0]
+        };
+        let phys = window.inner_size();
+        tracing::info!("surface fmt={surface_fmt:?} alpha={alpha_mode:?} phys={phys:?} opacity={opacity}");
 
         let surface_cfg = wgpu::SurfaceConfiguration {
             usage:        wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -193,7 +200,7 @@ impl Gpu {
         let bind_group  = make_bind_group(&device, &bgl, &sampler, &screen_view);
         let framebuf    = vec![0u8; fb_w * fb_h * 4];
 
-        Self { device, queue, surface, surface_cfg, pipeline, bgl, sampler, screen_tex, bind_group, fb_w, fb_h, framebuf }
+        Self { device, queue, surface, surface_cfg, pipeline, bgl, sampler, screen_tex, bind_group, fb_w, fb_h, framebuf, opacity }
     }
 
     fn resize(&mut self, w: u32, h: u32) {
@@ -209,8 +216,8 @@ impl Gpu {
         self.bind_group = make_bind_group(&self.device, &self.bgl, &self.sampler, &view);
     }
 
-    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, top_inset: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize, Option<(usize,usize)>)>) {
-        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, top_inset, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay);
+    fn render(&mut self, pane: &Pane, font: &Font, font_px: f32, cell_w: usize, cell_h: usize, baseline: usize, top_inset: usize, left_inset: usize, selection: Option<Selection>, config: &Config, ghost: &str, popup: Option<&PopupState>, overlay: Option<(&RenderDoc, usize, Option<(usize,usize)>)>) {
+        paint_framebuf(pane, font, font_px, cell_w, cell_h, baseline, top_inset, left_inset, self.fb_w, self.fb_h, &mut self.framebuf, selection, config, ghost, popup, overlay, self.opacity);
 
         self.queue.write_texture(
             self.screen_tex.as_image_copy(),
@@ -309,6 +316,9 @@ const TITLEBAR_INSET_LOGICAL: f64 = 28.0;
 #[cfg(not(target_os = "macos"))]
 const TITLEBAR_INSET_LOGICAL: f64 = 0.0;
 
+/// Logical pixels of padding on the left edge of the terminal content.
+const LEFT_INSET_LOGICAL: f64 = 5.0;
+
 struct App {
     shell:      String,
     config:     Config,
@@ -333,6 +343,8 @@ struct App {
     baseline:   usize,
     /// Physical pixels to skip at the top of the framebuffer (traffic light zone).
     top_inset:  usize,
+    /// Physical pixels of left padding for terminal content.
+    left_inset: usize,
     modifiers:  ModifiersState,
     selection:  Option<Selection>,
     selecting:  bool,
@@ -364,6 +376,7 @@ impl App {
             cell_h:     16,
             baseline:   13,
             top_inset:  0,
+            left_inset: 0,
             modifiers:  ModifiersState::default(),
             selection:  None,
             selecting:  false,
@@ -372,8 +385,8 @@ impl App {
     }
 
     fn pixel_to_cell(&self, x: f64, y: f64) -> (usize, usize) {
-        let col = (x as usize / self.cell_w).min(self.pane.as_ref().map_or(0, |p| p.grid.width.saturating_sub(1)));
-        let row = ((y as usize).saturating_sub(self.top_inset) / self.cell_h).min(self.pane.as_ref().map_or(0, |p| p.grid.height.saturating_sub(1)));
+        let col = ((x as usize).saturating_sub(self.left_inset) / self.cell_w).min(self.pane.as_ref().map_or(0, |p| p.grid.width.saturating_sub(1)));
+        let row = ((y as usize).saturating_sub(self.top_inset)  / self.cell_h).min(self.pane.as_ref().map_or(0, |p| p.grid.height.saturating_sub(1)));
         (col, row)
     }
 
@@ -406,10 +419,12 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let opacity = self.config.window.opacity.clamp(0.0, 1.0);
         let attrs = {
             let base = WindowAttributes::default()
                 .with_title("rusty")
-                .with_inner_size(winit::dpi::LogicalSize::new(1024u32, 768u32));
+                .with_inner_size(winit::dpi::LogicalSize::new(1024u32, 768u32))
+                .with_transparent(opacity < 1.0);
             #[cfg(target_os = "macos")]
             let base = base
                 .with_titlebar_transparent(true)
@@ -423,19 +438,20 @@ impl ApplicationHandler for App {
         let scale    = window.scale_factor() as f32;
         self.font_px = self.config.font.size * scale;
         (self.cell_w, self.cell_h, self.baseline) = measure_cell(&self.font, self.font_px);
-        self.top_inset = (TITLEBAR_INSET_LOGICAL * window.scale_factor()).round() as usize;
-        tracing::info!("scale={scale} font_px={} cell={}×{} baseline={} top_inset={}", self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset);
+        self.top_inset  = (TITLEBAR_INSET_LOGICAL * window.scale_factor()).round() as usize;
+        self.left_inset = (LEFT_INSET_LOGICAL     * window.scale_factor()).round() as usize;
+        tracing::info!("scale={scale} font_px={} cell={}×{} baseline={} top_inset={} left_inset={}", self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset, self.left_inset);
 
         let phys = window.inner_size();
-        let cols = (phys.width  as usize / self.cell_w).max(1);
-        let rows = ((phys.height as usize).saturating_sub(self.top_inset) / self.cell_h).max(1);
+        let cols = ((phys.width  as usize).saturating_sub(self.left_inset) / self.cell_w).max(1);
+        let rows = ((phys.height as usize).saturating_sub(self.top_inset)  / self.cell_h).max(1);
 
         let pty = Pty::spawn(&self.shell, PtySize {
             cols: cols as u16, rows: rows as u16,
             px_w: phys.width as u16, px_h: phys.height as u16,
         }).expect("pty spawn");
 
-        self.gpu    = Some(Gpu::new(window.clone()));
+        self.gpu    = Some(Gpu::new(window.clone(), opacity));
         self.pane   = Some(Pane::new(0, cols, rows));
         self.pty    = Some(pty);
         self.window = Some(window);
@@ -450,8 +466,8 @@ impl ApplicationHandler for App {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(phys.width, phys.height);
                 }
-                let cols = (phys.width  as usize / self.cell_w).max(1);
-                let rows = ((phys.height as usize).saturating_sub(self.top_inset) / self.cell_h).max(1);
+                let cols = ((phys.width  as usize).saturating_sub(self.left_inset) / self.cell_w).max(1);
+                let rows = ((phys.height as usize).saturating_sub(self.top_inset)  / self.cell_h).max(1);
                 if let Some(pane) = &mut self.pane {
                     pane.resize(cols, rows);
                 }
@@ -844,7 +860,7 @@ impl ApplicationHandler for App {
                         .map(|h| h.ghost(&self.hint.line).to_owned())
                         .unwrap_or_default();
                     let overlay = self.overlay.as_ref().map(|(doc, scroll)| (doc, *scroll, self.overlay_sel));
-                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
+                    gpu.render(pane, &self.font, self.font_px, self.cell_w, self.cell_h, self.baseline, self.top_inset, self.left_inset, self.selection, &self.config, &ghost, self.popup.as_ref(), overlay);
                 }
             }
 
@@ -995,8 +1011,9 @@ fn paint_framebuf(
     cell_w:    usize,
     cell_h:    usize,
     baseline:  usize,
-    top_inset: usize,
-    fb_w:      usize,
+    top_inset:  usize,
+    left_inset: usize,
+    fb_w:       usize,
     fb_h:      usize,
     buf:       &mut [u8],
     selection: Option<Selection>,
@@ -1004,6 +1021,7 @@ fn paint_framebuf(
     ghost:     &str,
     popup:     Option<&PopupState>,
     overlay:   Option<(&RenderDoc, usize, Option<(usize,usize)>)>,
+    opacity:   f32,
 ) {
     let palette   = &config.palette;
     let ansi16    = palette.to_ansi16();
@@ -1108,7 +1126,7 @@ fn paint_framebuf(
                 (resolve(cell.fg, true), resolve(cell.bg, false))
             };
 
-            let px = col * cell_w;
+            let px = left_inset + col * cell_w;
             let py = top_inset + screen_row * cell_h;
 
             for dy in 0..cell_h {
@@ -1165,7 +1183,7 @@ fn paint_framebuf(
             if py >= fb_h { break; }
 
             // Clear cell background (use theme bg).
-            let px = ghost_col * cell_w;
+            let px = left_inset + ghost_col * cell_w;
             for dy in 0..cell_h {
                 let y = py + dy;
                 if y >= fb_h { break; }
@@ -1208,7 +1226,7 @@ fn paint_framebuf(
     // ── Completion popup ──────────────────────────────────────────────────────
     if let Some(popup) = popup {
         let cursor      = pane.cursor;
-        let popup_x     = cursor.col * cell_w;
+        let popup_x     = left_inset + cursor.col * cell_w;
         let popup_y_top = top_inset + (cursor.row + 1) * cell_h; // just below cursor row
 
         // Popup dimensions in cells.
@@ -1301,6 +1319,15 @@ fn paint_framebuf(
                 }
                 glyph_col += cell_w;
             }
+        }
+    }
+
+    // With PostMultiplied (straight-alpha) compositing, write opacity into the
+    // alpha channel and leave RGB as-is — the OS compositor does the blending.
+    if opacity < 1.0 {
+        let a = (opacity * 255.0).round() as u8;
+        for pixel in buf.chunks_exact_mut(4) {
+            pixel[3] = a;
         }
     }
 }
