@@ -100,12 +100,15 @@ impl Grid {
 
     /// Scroll up by `n` rows within [top..=bot], pushing displaced rows into scrollback only when top==0.
     pub fn scroll_up_region(&mut self, n: usize, top: usize, bot: usize) {
-        let n = n.min(bot - top + 1);
+        if top > bot || bot >= self.height { return; }
+        let region_rows = bot - top + 1;
+        let n = n.min(region_rows);
         if top == 0 && bot == self.height - 1 {
-            // Full-screen scroll — push into scrollback.
+            // Full-screen scroll — push displaced rows into scrollback.
             for r in top..top + n {
                 let start = r * self.width;
-                let row: Vec<Cell> = self.cells[start..start + self.width].to_vec();
+                let end = (start + self.width).min(self.cells.len());
+                let row: Vec<Cell> = self.cells[start..end].to_vec();
                 if !self.in_alt_screen {
                     if self.scrollback.len() >= MAX_SCROLLBACK {
                         self.scrollback.pop_front();
@@ -114,16 +117,29 @@ impl Grid {
                 }
             }
         }
+        if n >= region_rows {
+            // Scrolling more rows than the region — just clear the whole region.
+            for r in top..=bot {
+                let start = r * self.width;
+                let end = (start + self.width).min(self.cells.len());
+                self.cells[start..end].fill(Cell::default());
+            }
+            return;
+        }
         // Shift rows up within the region.
-        for r in top..=bot.saturating_sub(n) {
+        for r in top..=bot - n {
             let src = (r + n) * self.width;
             let dst = r * self.width;
-            self.cells.copy_within(src..src + self.width, dst);
+            let len = self.width.min(self.cells.len().saturating_sub(src));
+            if len > 0 {
+                self.cells.copy_within(src..src + len, dst);
+            }
         }
         // Clear vacated rows at bottom of region.
         for r in (bot + 1).saturating_sub(n)..=bot {
             let start = r * self.width;
-            self.cells[start..start + self.width].fill(Cell::default());
+            let end = (start + self.width).min(self.cells.len());
+            self.cells[start..end].fill(Cell::default());
         }
     }
 
@@ -182,6 +198,31 @@ impl Grid {
                 &Cell::BLANK
             }
         }
+    }
+
+    /// Index (0-based) of the last row that contains at least one non-blank cell.
+    /// Returns None if the screen is entirely blank.
+    pub fn last_nonempty_row(&self) -> Option<usize> {
+        for r in (0..self.height).rev() {
+            let start = r * self.width;
+            let end = (start + self.width).min(self.cells.len());
+            if self.cells[start..end].iter().any(|c| c.ch != ' ' && c.ch != '\0') {
+                return Some(r);
+            }
+        }
+        None
+    }
+
+    pub fn cells_len(&self) -> usize { self.cells.len() }
+
+    pub fn cells_row(&self, start: usize, end: usize) -> Vec<Cell> {
+        self.cells[start..end].to_vec()
+    }
+
+    pub fn push_scrollback(&mut self, row: Vec<Cell>) {
+        if self.in_alt_screen { return; }
+        if self.scrollback.len() >= MAX_SCROLLBACK { self.scrollback.pop_front(); }
+        self.scrollback.push_back(row);
     }
 
     /// Total rows in scrollback + screen.

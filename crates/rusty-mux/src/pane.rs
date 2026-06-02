@@ -4,6 +4,8 @@ use rusty_core::parser::{Action, Parser};
 
 pub enum PaneEvent {
     Cwd(String),
+    /// Response bytes to write back to the PTY (e.g. cursor position report).
+    PtyWrite(Vec<u8>),
 }
 
 pub struct Pane {
@@ -28,6 +30,11 @@ pub struct Pane {
     pub mouse_report: bool,
     /// SGR extended mouse encoding (CSI ?1006h).
     pub mouse_sgr:    bool,
+    /// Cursor/pen state saved on 1049h, restored on 1049l.
+    saved_cursor:     Option<Cursor>,
+    saved_pen_fg:     Option<Color>,
+    saved_pen_bg:     Option<Color>,
+    saved_pen_attrs:  Option<Attrs>,
 }
 
 impl Pane {
@@ -48,6 +55,10 @@ impl Pane {
             app_cursor:   false,
             mouse_report: false,
             mouse_sgr:    false,
+            saved_cursor:    None,
+            saved_pen_fg:    None,
+            saved_pen_bg:    None,
+            saved_pen_attrs: None,
         }
     }
 
@@ -81,15 +92,30 @@ impl Pane {
     pub fn process_with_events(&mut self, bytes: &[u8]) -> Vec<PaneEvent> {
         let mut events = Vec::new();
         for action in self.parser.advance(bytes) {
-            if let Action::OscDispatch { ref params, .. } = action {
-                // OSC 7: notify CWD — params[0] = "7", params[1] = "file://host/path"
-                if params.first().map(|p| p.as_slice() == b"7").unwrap_or(false) {
-                    if let Some(payload) = params.get(1) {
-                        if let Ok(s) = std::str::from_utf8(payload) {
-                            events.push(PaneEvent::Cwd(s.to_owned()));
+            match &action {
+                Action::OscDispatch { params, .. } => {
+                    // OSC 7: notify CWD — params[0] = "7", params[1] = "file://host/path"
+                    if params.first().map(|p| p.as_slice() == b"7").unwrap_or(false) {
+                        if let Some(payload) = params.get(1) {
+                            if let Ok(s) = std::str::from_utf8(payload) {
+                                events.push(PaneEvent::Cwd(s.to_owned()));
+                            }
                         }
                     }
                 }
+                Action::CsiDispatch { params, intermediates, action: 'n', .. }
+                    if intermediates.is_empty() =>
+                {
+                    // DSR — Device Status Report.
+                    // CSI 6 n → respond with CPR: ESC [ row ; col R  (1-based).
+                    if params.first().copied() == Some(6) {
+                        let row = self.cursor.row + 1;
+                        let col = self.cursor.col + 1;
+                        let cpr = format!("\x1b[{};{}R", row, col);
+                        events.push(PaneEvent::PtyWrite(cpr.into_bytes()));
+                    }
+                }
+                _ => {}
             }
             self.apply(action);
         }
@@ -151,16 +177,60 @@ impl Pane {
         let (w, h) = (self.grid.width, self.grid.height);
         match mode {
             0 => {
-                for c in col..w { self.grid.set(c, row, Cell::default()); }
-                for r in (row + 1)..h { for c in 0..w { self.grid.set(c, r, Cell::default()); } }
+                // ED 0: erase from cursor to end of screen.
+                // When erasing the full screen from (0,0), scroll existing content
+                // into scrollback first so history is preserved and the screen is clean.
+                if row == 0 && col == 0 && !self.grid.in_alt_screen {
+                    let content_rows = self.grid.last_nonempty_row().map(|r| r + 1).unwrap_or(0);
+                    for r in 0..content_rows {
+                        let start = r * self.grid.width;
+                        let end = (start + self.grid.width).min(self.grid.cells_len());
+                        let row_cells = self.grid.cells_row(start, end);
+                        self.grid.push_scrollback(row_cells);
+                    }
+                    self.grid.clear();
+                    self.scroll_off = 0;
+                } else {
+                    for c in col..w { self.grid.set(c, row, Cell::default()); }
+                    for r in (row + 1)..h { for c in 0..w { self.grid.set(c, r, Cell::default()); } }
+                }
             }
             1 => {
                 for r in 0..row { for c in 0..w { self.grid.set(c, r, Cell::default()); } }
                 for c in 0..=col { self.grid.set(c, row, Cell::default()); }
             }
-            2 | 3 => {
+            2 => {
+                // ED 2: erase visible screen.
+                // Push only content rows (up to last non-blank row) to scrollback
+                // so that scrolling back doesn't show a wall of blank lines.
+                if !self.grid.in_alt_screen {
+                    let content_rows = self.grid.last_nonempty_row().map(|r| r + 1).unwrap_or(0);
+                    for r in 0..content_rows {
+                        let start = r * self.grid.width;
+                        let end = (start + self.grid.width).min(self.grid.cells_len());
+                        let row = self.grid.cells_row(start, end);
+                        self.grid.push_scrollback(row);
+                    }
+                    self.grid.clear();
+                } else {
+                    self.grid.clear();
+                }
+                self.scroll_off = 0;
+            }
+            3 => {
+                // ED(3): xterm "clear scrollback" — but we preserve history so users
+                // can still scroll back after `clear`, matching iTerm2/Terminal.app behavior.
+                // We treat it like ED(2): push content rows to scrollback, then blank screen.
+                if !self.grid.in_alt_screen {
+                    let content_rows = self.grid.last_nonempty_row().map(|r| r + 1).unwrap_or(0);
+                    for r in 0..content_rows {
+                        let start = r * self.grid.width;
+                        let end = (start + self.grid.width).min(self.grid.cells_len());
+                        let row = self.grid.cells_row(start, end);
+                        self.grid.push_scrollback(row);
+                    }
+                }
                 self.grid.clear();
-                self.grid.scrollback.clear();
                 self.scroll_off = 0;
             }
             _ => {}
@@ -187,6 +257,10 @@ impl Pane {
             for &param in params {
                 match (param, action) {
                     (1049, 'h') => {
+                        self.saved_cursor    = Some(self.cursor);
+                        self.saved_pen_fg    = Some(self.pen_fg);
+                        self.saved_pen_bg    = Some(self.pen_bg);
+                        self.saved_pen_attrs = Some(self.pen_attrs);
                         self.grid.enter_alt_screen();
                         self.cursor     = rusty_core::cursor::Cursor { col: 0, row: 0, visible: true };
                         self.scroll_off = 0;
@@ -196,6 +270,10 @@ impl Pane {
                     }
                     (1049, 'l') => {
                         self.grid.leave_alt_screen();
+                        if let Some(c) = self.saved_cursor.take() { self.cursor = c; }
+                        if let Some(f) = self.saved_pen_fg.take()    { self.pen_fg    = f; }
+                        if let Some(b) = self.saved_pen_bg.take()    { self.pen_bg    = b; }
+                        if let Some(a) = self.saved_pen_attrs.take() { self.pen_attrs = a; }
                         self.scroll_off   = 0;
                         self.scroll_top   = 0;
                         self.scroll_bot   = self.grid.height.saturating_sub(1);
@@ -329,5 +407,137 @@ impl Pane {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_pane() -> Pane {
+        Pane::new(0, 80, 24)
+    }
+
+    #[test]
+    fn alt_screen_blanks_cells() {
+        let mut pane = make_pane();
+        pane.process(b"hello world\r\nline two\r\n");
+        let cell = pane.grid.get(0, 0);
+        assert_eq!(cell.ch, 'h', "primary screen should have content");
+        pane.process(b"\x1b[?1049h");
+        assert!(pane.grid.in_alt_screen);
+        for row in 0..pane.grid.height {
+            for col in 0..pane.grid.width {
+                let cell = pane.grid.get(col, row);
+                assert_eq!(cell.ch, ' ', "alt screen cell ({col},{row}) should be blank, got {:?}", cell.ch);
+            }
+        }
+        assert_eq!(pane.grid.scrollback.len(), 0, "alt screen scrollback should be empty");
+        pane.process(b"\x1b[?1049l");
+        assert!(!pane.grid.in_alt_screen);
+        let cell = pane.grid.get(0, 0);
+        assert_eq!(cell.ch, 'h', "primary screen content should be restored");
+    }
+
+    #[test]
+    fn alt_screen_cursor_saved_and_restored() {
+        let mut pane = make_pane();
+        pane.process(b"\x1b[5;10H");
+        assert_eq!(pane.cursor.row, 4);
+        assert_eq!(pane.cursor.col, 9);
+        pane.process(b"\x1b[?1049h");
+        assert_eq!(pane.cursor.row, 0);
+        assert_eq!(pane.cursor.col, 0);
+        pane.process(b"\x1b[10;20H");
+        pane.process(b"\x1b[?1049l");
+        assert_eq!(pane.cursor.row, 4, "cursor row should be restored");
+        assert_eq!(pane.cursor.col, 9, "cursor col should be restored");
+    }
+
+    #[test]
+    fn ls_then_claude_no_overlap() {
+        let mut pane = make_pane(); // 80x24
+
+        for i in 0..24 {
+            let line = format!("file_{:02}.txt\r\n", i);
+            pane.process(line.as_bytes());
+        }
+        assert!(pane.grid.scrollback.len() > 0, "ls output should have pushed to scrollback");
+        assert_eq!(pane.cursor.row, 23);
+
+        pane.process(b"\x1b[?1049h");
+        assert!(pane.grid.in_alt_screen);
+        assert_eq!(pane.grid.scrollback.len(), 0);
+
+        let mut non_blank = 0;
+        for row in 0..24 {
+            for col in 0..80 {
+                if pane.grid.get(col, row).ch != ' ' {
+                    non_blank += 1;
+                }
+            }
+        }
+        assert_eq!(non_blank, 0, "alt screen should have no ls content, found {non_blank} non-blank cells");
+        assert_eq!(pane.grid.total_rows(), 24);
+    }
+
+    #[test]
+    fn alt_screen_1049h_actually_received() {
+        // Confirm the parser correctly receives 1049h and triggers enter_alt_screen
+        let mut pane = make_pane();
+        pane.process(b"content\r\n");
+        assert!(!pane.grid.in_alt_screen);
+        // Send the exact bytes that a TUI app sends: CSI ? 1049 h
+        pane.process(b"\x1b[?1049h");
+        assert!(pane.grid.in_alt_screen, "1049h must trigger alt screen");
+        // Also confirm compound sequence works
+        let mut pane2 = make_pane();
+        pane2.process(b"content\r\n");
+        pane2.process(b"\x1b[?2004;1049h"); // bracketed paste + alt screen together
+        assert!(pane2.grid.in_alt_screen, "compound 1049h must trigger alt screen");
+    }
+
+    #[test]
+    fn primary_screen_scroll_pushes_content_up() {
+        // In a real terminal: ls output fills the screen, then new content (Claude)
+        // is written below. Old content scrolls into scrollback.
+        // The renderer uses view_start = scrollback.len() (with scroll_off=0),
+        // so the viewport always shows exactly cells[0..height].
+        // This invariant must hold: view_start == scrollback.len() always.
+        let mut pane = make_pane(); // 80x24
+
+        // Fill screen with ls-like content (26 lines = 2 in scrollback, 24 on screen)
+        for i in 0..26 {
+            let line = format!("ls_line_{:02}\r\n", i);
+            pane.process(line.as_bytes());
+        }
+        let sb_after_ls = pane.grid.scrollback.len();
+        let total = pane.grid.total_rows();
+        let view_start = total.saturating_sub(pane.grid.height);
+        assert_eq!(view_start, sb_after_ls,
+            "view_start must equal scrollback.len() — viewport shows only cells");
+
+        // Shell prompt + Enter
+        pane.process(b"$ claude\r\n");
+        let sb_after_prompt = pane.grid.scrollback.len();
+        let total = pane.grid.total_rows();
+        let view_start = total.saturating_sub(pane.grid.height);
+        assert_eq!(view_start, sb_after_prompt,
+            "view_start must still equal scrollback.len() after prompt");
+
+        // Claude writes several lines
+        for i in 0..10 {
+            let line = format!("Claude line {}\r\n", i);
+            pane.process(line.as_bytes());
+        }
+        let sb_after_claude = pane.grid.scrollback.len();
+        let total = pane.grid.total_rows();
+        let view_start = total.saturating_sub(pane.grid.height);
+        assert_eq!(view_start, sb_after_claude,
+            "view_start must equal scrollback.len() — renderer sees only cells, no scrollback bleed");
+
+        // Confirm scrollback grew as content scrolled off top
+        assert!(sb_after_claude > sb_after_ls,
+            "ls content should have moved to scrollback as Claude wrote");
     }
 }

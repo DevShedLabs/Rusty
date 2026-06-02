@@ -1010,45 +1010,56 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let mut dirty = false;
 
-        if let (Some(pty), Some(pane)) = (&self.pty, &mut self.pane) {
-            while let Ok(bytes) = pty.rx.try_recv() {
-                for event in pane.process_with_events(&bytes) {
-                    match event {
-                        rusty_mux::pane::PaneEvent::Cwd(payload) => {
-                            self.hint.set_cwd_from_osc7(&payload);
+        if let Some(pane) = &mut self.pane {
+            let mut pty_responses: Vec<Vec<u8>> = Vec::new();
+            if let Some(pty) = &self.pty {
+                while let Ok(bytes) = pty.rx.try_recv() {
+                    let events = pane.process_with_events(&bytes);
+                    for event in events {
+                        match event {
+                            rusty_mux::pane::PaneEvent::Cwd(payload) => {
+                                self.hint.set_cwd_from_osc7(&payload);
+                            }
+                            rusty_mux::pane::PaneEvent::PtyWrite(response) => {
+                                pty_responses.push(response);
+                            }
                         }
                     }
-                }
-                if self.pending_render.is_some() {
-                    self.capture_buf.extend_from_slice(&bytes);
-                    self.capture_last_byte = Some(std::time::Instant::now());
-                }
-                dirty = true;
-            }
-
-            // Finalise render after 200 ms of PTY silence.
-            if self.pending_render.is_some() {
-                let idle = self.capture_last_byte
-                    .map(|t| t.elapsed().as_millis() >= 200)
-                    .unwrap_or(false);
-                if idle {
-                    let trigger = self.pending_render.take().unwrap();
-                    let raw = String::from_utf8_lossy(&self.capture_buf).into_owned();
-                    tracing::info!("render finalised: {:?}, {} bytes", trigger, raw.len());
-                    let doc = build_render_doc(&trigger, &raw, pane.grid.width);
-                    self.overlay = Some((doc, 0));
-                    self.capture_buf.clear();
-                    self.capture_last_byte = None;
+                    if self.pending_render.is_some() {
+                        self.capture_buf.extend_from_slice(&bytes);
+                        self.capture_last_byte = Some(std::time::Instant::now());
+                    }
                     dirty = true;
-                } else if self.capture_last_byte.is_some() {
-                    // Still waiting — wake again after the remaining time.
-                    let elapsed = self.capture_last_byte.unwrap().elapsed().as_millis() as u64;
-                    let remaining = 200u64.saturating_sub(elapsed);
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        std::time::Instant::now() + std::time::Duration::from_millis(remaining),
-                    ));
-                    return;
                 }
+            }
+            if let Some(pty) = &mut self.pty {
+                for response in pty_responses {
+                    let _ = pty.write_bytes(&response);
+                }
+            }
+        }
+        // Finalise render after 200 ms of PTY silence.
+        if self.pending_render.is_some() {
+            let idle = self.capture_last_byte
+                .map(|t| t.elapsed().as_millis() >= 200)
+                .unwrap_or(false);
+            if idle {
+                let trigger = self.pending_render.take().unwrap();
+                let raw = String::from_utf8_lossy(&self.capture_buf).into_owned();
+                let width = self.pane.as_ref().map_or(80, |p| p.grid.width);
+                tracing::info!("render finalised: {:?}, {} bytes", trigger, raw.len());
+                let doc = build_render_doc(&trigger, &raw, width);
+                self.overlay = Some((doc, 0));
+                self.capture_buf.clear();
+                self.capture_last_byte = None;
+                dirty = true;
+            } else if self.capture_last_byte.is_some() {
+                let elapsed = self.capture_last_byte.unwrap().elapsed().as_millis() as u64;
+                let remaining = 200u64.saturating_sub(elapsed);
+                event_loop.set_control_flow(ControlFlow::WaitUntil(
+                    std::time::Instant::now() + std::time::Duration::from_millis(remaining),
+                ));
+                return;
             }
         }
 

@@ -35,6 +35,7 @@ impl Pty {
         cmd.env("TERM_PROGRAM", "rusty");
         cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
         // Disable macOS Terminal.app session save/restore — it errors in any other terminal.
         cmd.env("SHELL_SESSION_DID_INIT", "1");
         pair.slave.spawn_command(cmd)?;
