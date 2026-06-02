@@ -176,6 +176,38 @@ impl Default for WindowConfig {
     }
 }
 
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TabsConfig {
+    /// Background of the tab bar.
+    pub bar_bg:        Color,
+    /// Foreground (text) of inactive tabs.
+    pub bar_fg:        Color,
+    /// Background of the active tab.
+    pub active_bg:     Color,
+    /// Foreground (text) of the active tab.
+    pub active_fg:     Color,
+    /// Accent line color shown on the active pane when splits are open.
+    pub active_border: Color,
+    /// Divider color between tabs and between split panes.
+    pub separator:     Color,
+}
+
+impl Default for TabsConfig {
+    fn default() -> Self {
+        Self {
+            bar_bg:        Color([0x1e, 0x1e, 0x2e]),
+            bar_fg:        Color([0x88, 0x88, 0xaa]),
+            active_bg:     Color([0x31, 0x31, 0x4a]),
+            active_fg:     Color([0xe0, 0xe0, 0xff]),
+            active_border: Color([0x89, 0xb4, 0xfa]),
+            separator:     Color([0x44, 0x44, 0x66]),
+        }
+    }
+}
+
 // ── Top-level config ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +217,7 @@ pub struct Config {
     pub font:     FontConfig,
     pub scroll:   ScrollConfig,
     pub window:   WindowConfig,
+    pub tabs:     TabsConfig,
 }
 
 impl Default for Config {
@@ -194,6 +227,7 @@ impl Default for Config {
             font:    FontConfig::default(),
             scroll:  ScrollConfig::default(),
             window:  WindowConfig::default(),
+            tabs:    TabsConfig::default(),
         }
     }
 }

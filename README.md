@@ -12,10 +12,11 @@ A next-generation terminal emulator for macOS, written in Rust.
 
 Most terminals are thin wrappers around a VT100 parser. Rusty is built from scratch with first-class features that other terminals bolt on as plugins — or don't have at all.
 
+- **Tabs and split panes** — multiple independent shell sessions per window, split horizontally or vertically into any layout. Navigate with keyboard shortcuts or click the tab bar.
 - **Type hinting** — fish-style inline ghost text from your command history, accepted with Tab or →. Press Tab for a full popup showing files in your current directory, PATH commands, and history matches.
 - **Native rendering** — `cat file.md` or `cat file.json` renders a native overlay with syntax highlighting instead of raw text. No pipes, no extra tools.
 - **Scrollback selection and copy** — click and drag to select, Cmd+C to copy, in both the terminal view and rendered overlays.
-- **Configurable colours** — edit `~/.config/rusty/config.toml` to theme every ANSI colour, background, foreground, cursor, and selection highlight.
+- **Configurable colours** — edit `~/.config/rusty/config.toml` to theme every ANSI colour, background, foreground, cursor, selection, tab bar, and pane borders.
 - **GPU-accelerated** — Metal backend on Apple Silicon via `wgpu`. No CPU fallback, no Electron.
 
 ## Features
@@ -58,6 +59,32 @@ Overlay controls:
 - Click and drag — select text
 - Cmd+C — copy selection
 - q / Esc / Enter — dismiss
+
+### Tabs and split panes
+
+Each tab is an independent shell session. Panes split the current tab into multiple independent PTYs, laid out in a recursive tree.
+
+**Tabs**
+
+| Key | Action |
+|-----|--------|
+| `Cmd+T` | New tab |
+| `Cmd+W` | Close active pane; closes tab when last pane; quits when last tab |
+| `Cmd+]` | Next tab |
+| `Cmd+[` | Previous tab |
+| Click tab | Switch to that tab |
+
+Tab titles update automatically to the current directory name via OSC 7 (see shell setup below).
+
+**Split panes**
+
+| Key | Action |
+|-----|--------|
+| `Cmd+D` | Split active pane vertically (side by side) |
+| `Cmd+Shift+D` | Split active pane horizontally (stacked) |
+| `Cmd+Opt+Arrow` | Move focus to the nearest pane in that direction |
+
+The active pane is highlighted with a 1px accent line along its top edge.
 
 ### Input
 
@@ -106,6 +133,17 @@ family = "JetBrains Mono"   # bundled — system font lookup coming later
 natural = true    # macOS natural scroll direction
 lines   = 3       # lines per wheel tick
 history = 10000   # scrollback buffer size
+
+[window]
+opacity = 1.0     # 0.0 (fully transparent) → 1.0 (fully opaque)
+
+[tabs]
+bar_bg        = "#1e1e2e"   # tab bar background
+bar_fg        = "#8888aa"   # inactive tab label colour
+active_bg     = "#31314a"   # active tab background
+active_fg     = "#e0e0ff"   # active tab label colour
+active_border = "#89b4fa"   # accent line on the focused pane when splits are open
+separator     = "#444466"   # divider between tabs and between split panes
 ```
 
 ### Recommended shell setup
@@ -205,8 +243,8 @@ cargo check -p rusty-hint
 
 ### Near-term
 
-- **Tabs and split panes** — the layout tree (`rusty-mux`) is already designed for it; each pane is an independent PTY + grid. Keyboard shortcuts to create, navigate, and resize panes.
 - **Git status display** — first-class git context in the prompt area and tab titles: branch name, ahead/behind counts, dirty indicator. Reads via `libgit2` (`rusty-git` crate exists, just needs wiring to the UI).
+- **Pane resize** — drag the divider between split panes to adjust the ratio.
 - **Font selection** — load any system font by name from `config.toml`. Currently bundled JetBrains Mono only.
 - **Session restore** — serialise the tab/pane layout to disk on quit, restore on next launch. The session serialisation code is already in `rusty-mux`.
 

@@ -3,7 +3,7 @@ pub mod pane;
 pub mod session;
 pub mod tab;
 
-pub use layout::{Layout, Split};
+pub use layout::{Layout, Rect, Split};
 pub use pane::Pane;
 pub use session::Session;
-pub use tab::Tab;
+pub use tab::{FocusDir, Tab};
