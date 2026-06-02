@@ -1029,6 +1029,7 @@ impl ApplicationHandler for App {
                         self.capture_buf.extend_from_slice(&bytes);
                         self.capture_last_byte = Some(std::time::Instant::now());
                     }
+                    pane.scroll_off = 0;
                     dirty = true;
                 }
             }

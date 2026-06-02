@@ -4,6 +4,7 @@ pub enum Action {
     Print(char),
     Execute(u8),
     CsiDispatch { params: Vec<i64>, intermediates: Vec<u8>, ignore: bool, action: char },
+    EscDispatch { intermediates: Vec<u8>, ignore: bool, byte: u8 },
     OscDispatch { params: Vec<Vec<u8>>, bell_terminated: bool },
     Hook { params: Vec<i64>, intermediates: Vec<u8>, ignore: bool, action: char },
     Put(u8),
@@ -34,6 +35,14 @@ impl vte::Perform for Collector<'_> {
             intermediates: intermediates.to_vec(),
             ignore,
             action,
+        });
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
+        self.0.push(Action::EscDispatch {
+            intermediates: intermediates.to_vec(),
+            ignore,
+            byte,
         });
     }
 

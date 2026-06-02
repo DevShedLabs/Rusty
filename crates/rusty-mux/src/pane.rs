@@ -35,6 +35,11 @@ pub struct Pane {
     saved_pen_fg:     Option<Color>,
     saved_pen_bg:     Option<Color>,
     saved_pen_attrs:  Option<Attrs>,
+    /// Cursor/pen state saved on ESC 7 (DECSC), restored on ESC 8 (DECRC).
+    decsc_cursor:     Option<Cursor>,
+    decsc_pen_fg:     Color,
+    decsc_pen_bg:     Color,
+    decsc_pen_attrs:  Attrs,
 }
 
 impl Pane {
@@ -59,6 +64,10 @@ impl Pane {
             saved_pen_fg:    None,
             saved_pen_bg:    None,
             saved_pen_attrs: None,
+            decsc_cursor:    None,
+            decsc_pen_fg:    Color::Default,
+            decsc_pen_bg:    Color::Default,
+            decsc_pen_attrs: Attrs::empty(),
         }
     }
 
@@ -133,6 +142,57 @@ impl Pane {
                 _ => {}
             },
             Action::CsiDispatch { params, intermediates, action, .. } => self.csi(&params, &intermediates, action),
+            Action::EscDispatch { intermediates, byte, .. } => self.esc(&intermediates, byte),
+            _ => {}
+        }
+    }
+
+    /// Handle ESC dispatch sequences (no CSI `[`), e.g. ESC 7 / ESC 8 / ESC M.
+    fn esc(&mut self, intermediates: &[u8], byte: u8) {
+        // Intermediates are for charset selection (ESC ( B etc.) — ignore those.
+        if !intermediates.is_empty() { return; }
+        match byte {
+            // DECSC — save cursor, pen, (charset/origin) state.
+            b'7' => {
+                self.decsc_cursor    = Some(self.cursor);
+                self.decsc_pen_fg    = self.pen_fg;
+                self.decsc_pen_bg    = self.pen_bg;
+                self.decsc_pen_attrs = self.pen_attrs;
+            }
+            // DECRC — restore cursor and pen saved by DECSC.
+            b'8' => {
+                if let Some(c) = self.decsc_cursor {
+                    self.cursor = c;
+                    self.cursor.col = self.cursor.col.min(self.grid.width.saturating_sub(1));
+                    self.cursor.row = self.cursor.row.min(self.grid.height.saturating_sub(1));
+                }
+                self.pen_fg    = self.decsc_pen_fg;
+                self.pen_bg    = self.decsc_pen_bg;
+                self.pen_attrs = self.decsc_pen_attrs;
+            }
+            // IND — index: move down one line, scrolling if at bottom of region.
+            b'D' => self.linefeed(),
+            // NEL — next line: CR + LF.
+            b'E' => { self.cursor.col = 0; self.linefeed(); }
+            // RI — reverse index: move up one line, scrolling down if at top of region.
+            b'M' => {
+                if self.cursor.row == self.scroll_top {
+                    self.grid.scroll_down_region(1, self.scroll_top, self.scroll_bot);
+                } else if self.cursor.row > 0 {
+                    self.cursor.row -= 1;
+                }
+            }
+            // RIS — full reset.
+            b'c' => {
+                self.grid.clear();
+                self.cursor = rusty_core::cursor::Cursor { col: 0, row: 0, visible: true };
+                self.scroll_top = 0;
+                self.scroll_bot = self.grid.height.saturating_sub(1);
+                self.pen_fg    = Color::Default;
+                self.pen_bg    = Color::Default;
+                self.pen_attrs = Attrs::empty();
+                self.autowrap  = true;
+            }
             _ => {}
         }
     }
@@ -305,8 +365,10 @@ impl Pane {
             'F' => { self.cursor_up(p(0, 1) as usize);   self.cursor.col = 0; }
             'G' => self.cursor.col = (p(0, 1) as usize).saturating_sub(1).min(self.grid.width - 1),
             'H' | 'f' => {
-                self.cursor.row = (p(0, 1) as usize).saturating_sub(1).min(self.grid.height - 1);
-                self.cursor.col = (p(1, 1) as usize).saturating_sub(1).min(self.grid.width - 1);
+                let new_row = (p(0, 1) as usize).saturating_sub(1).min(self.grid.height - 1);
+                let new_col = (p(1, 1) as usize).saturating_sub(1).min(self.grid.width - 1);
+                self.cursor.row = new_row;
+                self.cursor.col = new_col;
             }
             // REP — repeat last printed character N times.
             'b' => { let n = p(0, 1) as usize; let ch = self.last_char; for _ in 0..n { self.print(ch); } }
@@ -539,5 +601,42 @@ mod tests {
         // Confirm scrollback grew as content scrolled off top
         assert!(sb_after_claude > sb_after_ls,
             "ls content should have moved to scrollback as Claude wrote");
+    }
+
+    #[test]
+    fn decsc_decrc_save_restore_cursor() {
+        // ESC 7 saves the cursor; ESC 8 restores it. Without this, an app that
+        // does ESC 7 ... move-cursor ... ESC 8 ends up with the wrong position.
+        let mut pane = make_pane();
+        pane.process(b"\x1b[10;20H"); // row 9, col 19 (0-based)
+        assert_eq!((pane.cursor.row, pane.cursor.col), (9, 19));
+        pane.process(b"\x1b7");        // DECSC
+        pane.process(b"\x1b[1;1H");    // move to home
+        assert_eq!((pane.cursor.row, pane.cursor.col), (0, 0));
+        pane.process(b"\x1b8");        // DECRC
+        assert_eq!((pane.cursor.row, pane.cursor.col), (9, 19),
+            "DECRC must restore the cursor saved by DECSC");
+    }
+
+    #[test]
+    fn claude_startup_keeps_cursor_at_bottom() {
+        // Regression: Claude (Ink) starts with `ESC 7  ESC [ r  ESC 8`.
+        // ESC[r (DECSTBM with no params) resets the scroll region AND homes the
+        // cursor to (0,0). ESC 8 (DECRC) must then restore the cursor to the
+        // bottom where the shell left it — otherwise Claude paints its UI from
+        // row 0 over the existing `ls` output instead of scrolling it up.
+        let mut pane = make_pane(); // 80x24
+
+        // Simulate `ls` leaving the cursor at the bottom row.
+        for i in 0..24 {
+            pane.process(format!("file_{:02}\r\n", i).as_bytes());
+        }
+        assert_eq!(pane.cursor.row, 23, "after ls the cursor is at the bottom");
+
+        // Claude's exact startup prologue.
+        pane.process(b"\x1b7\x1b[r\x1b8");
+
+        assert_eq!(pane.cursor.row, 23,
+            "DECRC after DECSTBM must put the cursor back at the bottom, not row 0");
     }
 }
