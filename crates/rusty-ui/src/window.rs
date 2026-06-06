@@ -1010,17 +1010,17 @@ impl ApplicationHandler for App {
 
                     // Tab — completions / ghost hint.
                     if matches!(&logical_key, Key::Named(NamedKey::Tab)) {
-                        // Sync hint.line from the actual terminal grid before
-                        // computing completions. This corrects drift caused by
-                        // Ctrl+C, Ctrl+U, history navigation, paste, etc. —
-                        // anything that changes the prompt without going through
-                        // our keystroke tracker.
-                        if let Some(grid_line) = self.active_pane()
-                            .map(|p| read_cursor_row(&p.grid, p.cursor.row))
-                            .filter(|s| !s.trim().is_empty())
+                        // Sync hint.line from the terminal grid before computing
+                        // completions — corrects drift from Ctrl+C, Ctrl+U,
+                        // shell history navigation, paste, etc.
+                        // We read up to the cursor column (not trim_end) so that
+                        // a trailing space ("git ") is preserved, which is what
+                        // tells the completion engine we're in argument position.
+                        if let Some((grid_line, cursor_col)) = self.active_pane()
+                            .map(|p| (read_cursor_row_to_col(&p.grid, p.cursor.row, p.cursor.col), p.cursor.col))
+                            .filter(|(s, _)| !s.trim().is_empty())
                         {
-                            // Strip the shell prompt prefix (everything up to and
-                            // including the last '$', '#', '❯', or '%' character).
+                            let _ = cursor_col;
                             let command_part = strip_prompt(&grid_line);
                             self.hint.update_line(command_part);
                         }
@@ -1372,6 +1372,14 @@ fn read_cursor_row(grid: &Grid, row: usize) -> String {
     let mut s: String = (0..grid.width).map(|col| grid.get(col, row).ch).collect();
     s.truncate(s.trim_end().len());
     s
+}
+
+/// Read the grid row up to `cursor_col` (exclusive), preserving trailing spaces.
+/// This lets the completion engine distinguish "git" (command) from "git " (argument position).
+fn read_cursor_row_to_col(grid: &Grid, row: usize, cursor_col: usize) -> String {
+    if row >= grid.height { return String::new(); }
+    let end = cursor_col.min(grid.width);
+    (0..end).map(|col| grid.get(col, row).ch).collect()
 }
 
 /// Strip the shell prompt prefix from a grid row, returning only the command part.
