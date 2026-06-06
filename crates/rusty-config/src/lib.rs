@@ -208,6 +208,22 @@ impl Default for TabsConfig {
     }
 }
 
+// ── Hints ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HintsConfig {
+    /// Show ghost (inline) history suggestions and history entries in the
+    /// completion popup. Off by default — set to true to enable.
+    pub fuzzy_history: bool,
+}
+
+impl Default for HintsConfig {
+    fn default() -> Self {
+        Self { fuzzy_history: false }
+    }
+}
+
 // ── Top-level config ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,6 +234,7 @@ pub struct Config {
     pub scroll:   ScrollConfig,
     pub window:   WindowConfig,
     pub tabs:     TabsConfig,
+    pub hints:    HintsConfig,
 }
 
 impl Default for Config {
@@ -228,6 +245,7 @@ impl Default for Config {
             scroll:  ScrollConfig::default(),
             window:  WindowConfig::default(),
             tabs:    TabsConfig::default(),
+            hints:   HintsConfig::default(),
         }
     }
 }

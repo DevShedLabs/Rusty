@@ -426,6 +426,7 @@ impl App {
     fn new(shell: &str, config: Config, proxy: EventLoopProxy<()>) -> Self {
         let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("font");
         let font_size = config.font.size;
+        let fuzzy_history = config.hints.fuzzy_history;
         Self {
             shell:      shell.to_owned(),
             config,
@@ -436,7 +437,7 @@ impl App {
             menu:       None,
             ptys:       HashMap::new(),
             session:    None,
-            hint:       HintEngine::new(),
+            hint:       HintEngine::new(fuzzy_history),
             popup:          None,
             pending_render:     None,
             capture_buf:        Vec::new(),

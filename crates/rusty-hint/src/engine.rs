@@ -43,22 +43,24 @@ pub enum EntryKind {
 // ── Engine ────────────────────────────────────────────────────────────────────
 
 pub struct HintEngine {
-    index:    CompletionIndex,
-    registry: CompletionRegistry,
-    pub line: String,
-    ghost:    Option<Hint>,
+    index:         CompletionIndex,
+    registry:      CompletionRegistry,
+    pub line:      String,
+    ghost:         Option<Hint>,
     /// Current working directory of the shell, updated via OSC 7.
-    pub cwd:  PathBuf,
+    pub cwd:       PathBuf,
+    fuzzy_history: bool,
 }
 
 impl HintEngine {
-    pub fn new() -> Self {
+    pub fn new(fuzzy_history: bool) -> Self {
         Self {
-            index:    CompletionIndex::new(),
-            registry: CompletionRegistry::load(),
-            line:     String::new(),
-            ghost:    None,
-            cwd:      std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            index:         CompletionIndex::new(),
+            registry:      CompletionRegistry::load(),
+            line:          String::new(),
+            ghost:         None,
+            cwd:           std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            fuzzy_history,
         }
     }
 
@@ -85,7 +87,7 @@ impl HintEngine {
 
     pub fn update_line(&mut self, line: &str) {
         self.line = line.to_owned();
-        self.ghost = self.compute_ghost();
+        self.ghost = if self.fuzzy_history { self.compute_ghost() } else { None };
     }
 
     pub fn hint(&self) -> Option<&Hint> {
@@ -132,10 +134,9 @@ impl HintEngine {
             }
         }
 
-        // Show history only when we have no spec/flag/path entries — i.e. we
-        // couldn't find anything smarter. This prevents history from burying
-        // flag completions when a TOML spec (or --help parse) is available.
-        let history: Vec<CompletionEntry> = if entries.is_empty() {
+        // History entries only when fuzzy_history is enabled and nothing
+        // smarter was found (no spec, no path match).
+        let history: Vec<CompletionEntry> = if self.fuzzy_history && entries.is_empty() {
             self.index.matches(line, 5)
                 .into_iter()
                 .map(|s| CompletionEntry {
@@ -223,7 +224,7 @@ impl HintEngine {
 }
 
 impl Default for HintEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self { Self::new(false) }
 }
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
@@ -337,7 +338,7 @@ mod tests {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let dir = PathBuf::from(manifest).join("../../completions-toml");
         env::set_var("RUSTY_COMPLETIONS_DIR", &dir);
-        HintEngine::new()
+        HintEngine::new(false)
     }
 
     #[test]
@@ -370,7 +371,7 @@ mod tests {
 
     #[test]
     fn history_shown_when_no_spec() {
-        let mut engine = HintEngine::new();
+        let mut engine = HintEngine::new(true);
         engine.index.push_command("unknowncmd --foo bar".to_owned());
         engine.update_line("unknowncmd ");
         let entries = engine.completions();
