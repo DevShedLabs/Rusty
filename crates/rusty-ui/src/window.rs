@@ -1331,7 +1331,7 @@ fn show_about_panel() {
     use objc2_foundation::{MainThreadMarker, NSDictionary, NSString};
     autoreleasepool(|_pool| {
         let mtm = unsafe { MainThreadMarker::new_unchecked() };
-        let app = unsafe { NSApplication::sharedApplication(mtm) };
+        let app = NSApplication::sharedApplication(mtm);
         let name_key = NSString::from_str("ApplicationName");
         let name_val = NSString::from_str("Rusty");
         let ver_key  = NSString::from_str("ApplicationVersion");
@@ -1359,7 +1359,7 @@ fn set_app_icon() {
             )
         };
         if let Some(image) = NSImage::initWithData(mtm.alloc::<NSImage>(), &data) {
-            let app = unsafe { NSApplication::sharedApplication(mtm) };
+            let app = NSApplication::sharedApplication(mtm);
             unsafe { app.setApplicationIconImage(Some(&image)) };
         }
     });

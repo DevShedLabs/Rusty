@@ -7,7 +7,7 @@ pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 pub enum UpdateStatus {
     AlreadyLatest,
-    Updated { from: String, to: String },
+    Updated { #[allow(dead_code)] from: String, to: String },
 }
 
 /// Check GitHub releases and return the latest tag, or None if already current.
