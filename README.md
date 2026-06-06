@@ -129,6 +129,10 @@ bright_white   = "#ffffff"
 size   = 16.0
 family = "JetBrains Mono"   # bundled — system font lookup coming later
 
+[hints]
+fuzzy_history=false   # disabled by default as it currently causes issues in some cases.
+
+
 [scroll]
 natural = true    # macOS natural scroll direction
 lines   = 3       # lines per wheel tick

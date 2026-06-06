@@ -29,6 +29,21 @@ pub struct SubcommandSpec {
     pub name: Option<String>,
 }
 
+/// What kind of filesystem argument a command accepts.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ArgsType {
+    /// Files and directories (default).
+    #[default]
+    Any,
+    /// Directories only (e.g. cd, pushd, rmdir).
+    Directory,
+    /// Files only.
+    File,
+    /// No filesystem argument — don't offer path completions at all.
+    None,
+}
+
 /// Top-level completion spec for one command.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct CommandSpec {
@@ -39,6 +54,9 @@ pub struct CommandSpec {
     pub flags: Vec<FlagSpec>,
     #[serde(default)]
     pub subcommands: Vec<SubcommandSpec>,
+    /// Controls what filesystem completions are offered for non-flag arguments.
+    #[serde(default)]
+    pub args: ArgsType,
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────

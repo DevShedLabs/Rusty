@@ -129,8 +129,21 @@ impl HintEngine {
             if !spec_entries.is_empty() {
                 entries.extend(spec_entries);
             } else {
-                // Fall back to file completions.
-                entries.extend(dir_completions("", &self.cwd, last_token));
+                // Filesystem fallback — respect args type from spec if present.
+                use crate::completions::ArgsType;
+                let args_type = self.registry.get(command)
+                    .map(|s| &s.args)
+                    .unwrap_or(&ArgsType::Any);
+                match args_type {
+                    ArgsType::Directory => {
+                        entries.extend(dir_only_completions(last_token, &self.cwd));
+                        entries.extend(cdpath_completions(last_token));
+                    }
+                    ArgsType::None => {}
+                    ArgsType::Any | ArgsType::File => {
+                        entries.extend(dir_completions("", &self.cwd, last_token));
+                    }
+                }
             }
         }
 
@@ -198,8 +211,10 @@ impl HintEngine {
             }
         }
 
-        // Flag completions — offered when prefix starts with '-' or no subcommands exist.
-        if prefix.starts_with('-') || spec.subcommands.is_empty() {
+        // Flag completions — only when the user has started typing a flag.
+        // Never offer flags unprompted: the filesystem/ArgsType fallback handles
+        // the empty-prefix case so commands like `cd` show dirs, not --help.
+        if prefix.starts_with('-') {
             for s in flag_suggestions(&spec, subcommand) {
                 if s.label.starts_with(prefix) {
                     out.push(CompletionEntry {
@@ -326,6 +341,64 @@ fn path_command_completions(prefix: &str) -> Vec<CompletionEntry> {
 fn is_executable(meta: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::PermissionsExt;
     meta.is_file() && (meta.permissions().mode() & 0o111) != 0
+}
+
+/// Completions for a path token, but only directories (used by cd, pushd, etc.).
+fn dir_only_completions(token: &str, cwd: &Path) -> Vec<CompletionEntry> {
+    // Reuse path_completions then filter, or go direct via read_dir_entries.
+    if token.contains('/') || token.starts_with('~') || token.starts_with('.') {
+        path_completions(token, cwd)
+            .into_iter()
+            .filter(|e| e.kind == EntryKind::Directory)
+            .collect()
+    } else {
+        let Ok(rd) = std::fs::read_dir(cwd) else { return vec![] };
+        let mut entries: Vec<CompletionEntry> = rd
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                if !name.starts_with(token) { return None; }
+                if name.starts_with('.') && !token.starts_with('.') { return None; }
+                if !e.file_type().ok()?.is_dir() { return None; }
+                Some(CompletionEntry {
+                    label:       format!("{name}/"),
+                    insert:      format!("{name}/"),
+                    kind:        EntryKind::Directory,
+                    description: None,
+                })
+            })
+            .collect();
+        entries.sort_by(|a, b| a.label.cmp(&b.label));
+        entries
+    }
+}
+
+/// Directories from CDPATH entries that match `prefix` (mirrors zsh/bash cd behaviour).
+fn cdpath_completions(prefix: &str) -> Vec<CompletionEntry> {
+    let cdpath = std::env::var("CDPATH").unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let mut out  = Vec::new();
+    for dir in cdpath.split(':') {
+        if dir.is_empty() || dir == "." { continue; }
+        let base = PathBuf::from(expand_tilde(dir));
+        let Ok(rd) = std::fs::read_dir(&base) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().into_string().unwrap_or_default();
+            if !name.starts_with(prefix) { continue; }
+            if name.starts_with('.') && !prefix.starts_with('.') { continue; }
+            if !e.file_type().map_or(false, |ft| ft.is_dir()) { continue; }
+            if seen.insert(name.clone()) {
+                out.push(CompletionEntry {
+                    label:       format!("{name}/"),
+                    insert:      format!("{name}/"),
+                    kind:        EntryKind::Directory,
+                    description: Some(format!("cdpath: {}", base.display())),
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.label.cmp(&b.label));
+    out
 }
 
 #[cfg(test)]

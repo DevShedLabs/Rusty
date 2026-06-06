@@ -123,6 +123,7 @@ fn parse_help_output(command: &str, text: &str) -> CommandSpec {
         description: None,
         flags,
         subcommands: vec![],
+        args: crate::completions::ArgsType::Any,
     }
 }
 

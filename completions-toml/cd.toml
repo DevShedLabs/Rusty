@@ -1,0 +1,7 @@
+command     = "cd"
+description = "Change the current directory"
+args        = "directory"
+
+[[flags]]
+long        = "help"
+description = "Show usage information"
