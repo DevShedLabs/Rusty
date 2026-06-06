@@ -8,3 +8,5 @@ rusty-core = { path = "../rusty-core" }
 anyhow     = { workspace = true }
 thiserror  = { workspace = true }
 tracing    = { workspace = true }
+serde      = { workspace = true }
+toml       = { workspace = true }

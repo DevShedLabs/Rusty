@@ -1,0 +1,173 @@
+command     = "grep"
+description = "Search for patterns in files"
+
+[[flags]]
+long        = "extended-regexp"
+short       = "E"
+description = "Interpret pattern as an extended regular expression"
+
+[[flags]]
+long        = "fixed-strings"
+short       = "F"
+description = "Interpret pattern as a list of fixed strings"
+
+[[flags]]
+long        = "basic-regexp"
+short       = "G"
+description = "Interpret pattern as a basic regular expression (default)"
+
+[[flags]]
+long        = "perl-regexp"
+short       = "P"
+description = "Interpret pattern as a Perl regular expression"
+
+[[flags]]
+long        = "regexp"
+short       = "e"
+description = "Use pattern for matching"
+takes_value = true
+value_hint  = "pattern"
+
+[[flags]]
+long        = "file"
+short       = "f"
+description = "Obtain patterns from file"
+takes_value = true
+value_hint  = "file"
+
+[[flags]]
+long        = "ignore-case"
+short       = "i"
+description = "Ignore case distinctions in pattern and input"
+
+[[flags]]
+long        = "invert-match"
+short       = "v"
+description = "Select non-matching lines"
+
+[[flags]]
+long        = "word-regexp"
+short       = "w"
+description = "Match whole words only"
+
+[[flags]]
+long        = "line-regexp"
+short       = "x"
+description = "Match whole lines only"
+
+[[flags]]
+long        = "count"
+short       = "c"
+description = "Print count of matching lines only"
+
+[[flags]]
+long        = "files-without-match"
+short       = "L"
+description = "Print names of files with no matches"
+
+[[flags]]
+long        = "files-with-matches"
+short       = "l"
+description = "Print names of files with at least one match"
+
+[[flags]]
+long        = "max-count"
+short       = "m"
+description = "Stop after NUM matching lines"
+takes_value = true
+value_hint  = "num"
+
+[[flags]]
+long        = "only-matching"
+short       = "o"
+description = "Print only matched parts of a matching line"
+
+[[flags]]
+long        = "quiet"
+short       = "q"
+description = "Suppress all normal output"
+
+[[flags]]
+long        = "no-messages"
+short       = "s"
+description = "Suppress error messages"
+
+[[flags]]
+long        = "recursive"
+short       = "r"
+description = "Read all files under each directory recursively"
+
+[[flags]]
+long        = "line-number"
+short       = "n"
+description = "Prefix each output line with its line number"
+
+[[flags]]
+long        = "with-filename"
+short       = "H"
+description = "Print file name with each match"
+
+[[flags]]
+long        = "no-filename"
+short       = "h"
+description = "Suppress the prefixing of file names"
+
+[[flags]]
+long        = "after-context"
+short       = "A"
+description = "Print NUM lines of trailing context after matches"
+takes_value = true
+value_hint  = "num"
+
+[[flags]]
+long        = "before-context"
+short       = "B"
+description = "Print NUM lines of leading context before matches"
+takes_value = true
+value_hint  = "num"
+
+[[flags]]
+long        = "context"
+short       = "C"
+description = "Print NUM lines of output context"
+takes_value = true
+value_hint  = "num"
+
+[[flags]]
+long        = "color"
+description = "Highlight matching strings (never/always/auto)"
+takes_value = true
+value_hint  = "when"
+
+[[flags]]
+long        = "exclude"
+description = "Skip files matching glob pattern"
+takes_value = true
+value_hint  = "glob"
+
+[[flags]]
+long        = "exclude-dir"
+description = "Exclude directories matching pattern from recursive searches"
+takes_value = true
+value_hint  = "dir"
+
+[[flags]]
+long        = "include"
+description = "Search only files matching glob pattern"
+takes_value = true
+value_hint  = "glob"
+
+[[flags]]
+long        = "binary"
+short       = "U"
+description = "Treat file as binary"
+
+[[flags]]
+long        = "text"
+short       = "a"
+description = "Process a binary file as if it were text"
+
+[[flags]]
+long        = "version"
+short       = "V"
+description = "Print version number"

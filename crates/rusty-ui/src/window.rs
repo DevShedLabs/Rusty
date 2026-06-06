@@ -983,13 +983,25 @@ impl ApplicationHandler for App {
                             Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Tab) => {
                                 let insert = popup.selected_insert().to_owned();
                                 self.popup = None;
-                                let suffix = insert.strip_prefix(self.hint.line.as_str())
-                                    .unwrap_or(&insert).to_owned();
-                                self.hint.line = insert;
+                                // Replace only the last token, not the whole line.
+                                // e.g. line="git -", insert="--version" → send "--version", replacing "-"
+                                let current_line = &self.hint.line;
+                                let last_token_start = current_line
+                                    .rfind(|c: char| c == ' ')
+                                    .map(|i| i + 1)
+                                    .unwrap_or(0);
+                                let prefix_to_keep = &current_line[..last_token_start];
+                                let new_line = format!("{}{}", prefix_to_keep, insert);
+                                // Send only the characters needed to complete: erase the last
+                                // token and write the full insert.
+                                let last_token_len = current_line.len() - last_token_start;
+                                let erase = "\x08".repeat(last_token_len);
+                                let write_str = format!("{}{}", erase, insert);
+                                self.hint.line = new_line;
                                 if let Some(session) = &mut self.session {
                                     if let Some(p) = session.active_tab_mut().active_pane_mut() { p.scroll_off = 0; }
                                 }
-                                self.active_pty_write(suffix.as_bytes());
+                                self.active_pty_write(write_str.as_bytes());
                                 return;
                             }
                             _ => { self.popup = None; }
@@ -998,6 +1010,20 @@ impl ApplicationHandler for App {
 
                     // Tab — completions / ghost hint.
                     if matches!(&logical_key, Key::Named(NamedKey::Tab)) {
+                        // Sync hint.line from the actual terminal grid before
+                        // computing completions. This corrects drift caused by
+                        // Ctrl+C, Ctrl+U, history navigation, paste, etc. —
+                        // anything that changes the prompt without going through
+                        // our keystroke tracker.
+                        if let Some(grid_line) = self.active_pane()
+                            .map(|p| read_cursor_row(&p.grid, p.cursor.row))
+                            .filter(|s| !s.trim().is_empty())
+                        {
+                            // Strip the shell prompt prefix (everything up to and
+                            // including the last '$', '#', '❯', or '%' character).
+                            let command_part = strip_prompt(&grid_line);
+                            self.hint.update_line(command_part);
+                        }
                         let entries = self.hint.completions();
                         if !entries.is_empty() { self.popup = PopupState::new(entries); return; }
                         if let Some(suffix) = self.hint.accept_ghost() {
@@ -1346,6 +1372,19 @@ fn read_cursor_row(grid: &Grid, row: usize) -> String {
     let mut s: String = (0..grid.width).map(|col| grid.get(col, row).ch).collect();
     s.truncate(s.trim_end().len());
     s
+}
+
+/// Strip the shell prompt prefix from a grid row, returning only the command part.
+/// Looks for the last occurrence of common prompt-terminating characters.
+fn strip_prompt(line: &str) -> &str {
+    // Find the last prompt terminator: '$', '#', '%', '❯', '➜', '>'
+    let terminators = ['$', '#', '%', '❯', '➜', '>'];
+    if let Some(pos) = line.rfind(|c| terminators.contains(&c)) {
+        let after = &line[pos + line[pos..].chars().next().map_or(1, |c| c.len_utf8())..];
+        after.trim_start()
+    } else {
+        line.trim()
+    }
 }
 
 fn overlay_selected_text(doc: &RenderDoc, scroll: usize, sel: Option<(usize, usize)>) -> String {
@@ -1774,10 +1813,12 @@ fn paint_framebuf(args: RenderArgs<'_>, fb_w: usize, fb_h: usize, buf: &mut [u8]
                     let bg = if is_sel { sel_bg } else { row_bg };
                     let fg = if is_sel { sel_fg } else {
                         match entry.kind {
-                            rusty_hint::EntryKind::Directory => dir_fg,
-                            rusty_hint::EntryKind::Command   => cmd_fg,
-                            rusty_hint::EntryKind::History   => hist_fg,
-                            rusty_hint::EntryKind::File      => row_fg,
+                            rusty_hint::EntryKind::Directory  => dir_fg,
+                            rusty_hint::EntryKind::Command    => cmd_fg,
+                            rusty_hint::EntryKind::History    => hist_fg,
+                            rusty_hint::EntryKind::File       => row_fg,
+                            rusty_hint::EntryKind::Flag       => cmd_fg,
+                            rusty_hint::EntryKind::Subcommand => dir_fg,
                         }
                     };
                     for dy in 0..cell_h {

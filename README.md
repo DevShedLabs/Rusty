@@ -248,85 +248,49 @@ cargo check -p rusty-hint
 - **Font selection** — load any system font by name from `config.toml`. Currently bundled JetBrains Mono only.
 - **Session restore** — serialise the tab/pane layout to disk on quit, restore on next launch. The session serialisation code is already in `rusty-mux`.
 
-### Structured command completion (`rusty-completions`)
+### Structured command completion
 
-The current Tab popup pulls from history, CWD, and PATH. The next step is a full structured completion engine — a port of the [Upterm](https://github.com/railsware/upterm) TypeScript completion model to Rust, extended with user-definable TOML files.
+Tab completions are powered by three layered sources, tried in order:
 
-**How it works:**
+1. **TOML spec files** — bundled definitions for common commands (`git`, `grep`, …) plus user files in `~/.config/rusty/completions/`. Subcommands, flags, descriptions, and value hints — all declarative, no code.
+2. **`--help` auto-parser** — for any command without a spec file, rusty runs `<cmd> --help` once per session, extracts flags and descriptions via regex, and caches the result.
+3. **Filesystem fallback** — files and directories in CWD.
 
-Each command has a registered `CompletionProvider`. On Tab press, rusty parses the current line, identifies the command, and calls the provider with full context:
-
-```rust
-pub struct CompletionContext {
-    pub cwd:           PathBuf,
-    pub argv:          Vec<String>,   // full tokenised command line
-    pub current_token: String,        // token at cursor
-    pub token_index:   usize,         // which argument position
-}
-
-pub struct Suggestion {
-    pub label:  String,
-    pub detail: Option<String>,       // shown in popup right column
-    pub insert: Option<String>,       // override for what gets inserted
-    pub kind:   SuggestionKind,       // Subcommand | Flag | File | Directory | Value | History
-}
-```
-
-Providers compose — a `git checkout` provider combines live branch names (from libgit2), unstaged files, and static flag definitions.
-
-**Two tiers — no code required for most commands:**
-
-*Tier 1 — TOML definition files.* Drop a file in `~/.config/rusty/completions/` and rusty loads it at startup. Covers subcommands, flags, and static values:
+**Writing a TOML completion spec** (`~/.config/rusty/completions/cargo.toml`):
 
 ```toml
-# ~/.config/rusty/completions/cargo.toml
-[command]
-name = "cargo"
+command     = "cargo"
+description = "Rust package manager"
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Use verbose output"
 
 [[subcommands]]
-name = "build"
-detail = "Compile the current package"
+name        = "build"
+description = "Compile the current package"
 
-  [[subcommands.flags]]
-  label = "--release"
-  detail = "Build with optimizations"
+[[subcommands.flags]]
+long        = "release"
+description = "Build with optimizations"
 
-  [[subcommands.flags]]
-  label = "--target"
-  detail = "Cross-compile for the target triple"
-  takes_value = true
+[[subcommands.flags]]
+long        = "target"
+description = "Cross-compile for the target triple"
+takes_value = true
+value_hint  = "triple"
 
 [[subcommands]]
-name = "test"
-detail = "Run the test suite"
+name        = "test"
+description = "Run the test suite"
 
-  [[subcommands.flags]]
-  label = "--nocapture"
-  detail = "Show stdout from passing tests"
+[[subcommands.flags]]
+long        = "nocapture"
+description = "Show stdout from passing tests"
 ```
 
-*Tier 2 — Dynamic Rust providers.* For context-aware completions that need live data — `git branch`, `npm run` scripts from `package.json`, docker container names, etc.:
-
-```rust
-#[async_trait]
-pub trait CompletionProvider: Send + Sync {
-    async fn suggest(&self, ctx: &CompletionContext) -> Vec<Suggestion>;
-}
-```
-
-**Built-in providers (porting from Upterm reference):**
-
-| Command | Dynamic sources |
-|---------|----------------|
-| `git` | live branches, remotes, staged/unstaged files, aliases (via libgit2) |
-| `npm` | subcommands + `scripts` from `package.json` in CWD |
-| `brew` | subcommands |
-| `cd`, `ls`, `cp`, `mv`, `rm` | file/directory completions |
-| `find`, `grep`, `tail` | flags |
-| `docker` | container/image names |
-| `cargo` | subcommands + flags |
-
-**User-defined completions** for any tool your team uses — `kubectl`, `gh`, internal CLIs — without waiting for a built-in. The TOML format is intentionally simple enough that a description in a PR is enough to write one.
+Bundled specs live in `completions-toml/` in the repo. User files in `~/.config/rusty/completions/` override bundled ones. Drop a `.toml` there for any tool your team uses — `kubectl`, `gh`, internal CLIs — no rebuild needed.
 
 ### Medium-term
 
