@@ -29,6 +29,9 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BINARY" "$APP_OUT/Contents/MacOS/$APP_NAME"
 cp "$ICON"   "$APP_OUT/Contents/Resources/$APP_NAME.icns"
 
+mkdir -p "$APP_OUT/Contents/Resources/completions"
+cp completions-toml/*.toml "$APP_OUT/Contents/Resources/completions/"
+
 cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

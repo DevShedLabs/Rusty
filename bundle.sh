@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="Rusty"
 BUNDLE_ID="com.rusty.terminal"
-VERSION="0.1.4"
+VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
 BINARY="target/release/rusty"
 ICON="crates/rusty-ui/assets/icon.icns"
 OUT="releases/$APP_NAME.app"
