@@ -10,7 +10,7 @@ use rusty_mux::layout::{Rect, Split};
 use rusty_mux::pane::Pane;
 use rusty_mux::tab::FocusDir;
 use rusty_mux::Session;
-use rusty_render::{RenderDoc, RenderTrigger, detect_trigger, trigger::{strip_trailing_prompt, strip_trailing_prompt_json}};
+use rusty_render::{RenderDoc, RenderTrigger, detect_trigger, BuiltinCommand, detect_builtin, trigger::{strip_trailing_prompt, strip_trailing_prompt_json}};
 use rusty_pty::{Pty, PtySize};
 use winit::{
     application::ApplicationHandler,
@@ -1064,6 +1064,32 @@ impl ApplicationHandler for App {
                                     .map(|p| read_cursor_row(&p.grid, p.cursor.row))
                                     .unwrap_or_default();
                                 let check_line = if grid_line.trim().is_empty() { &self.hint.line } else { &grid_line };
+
+                                // Intercept rusty built-in commands before they reach the shell.
+                                if let Some(builtin) = detect_builtin(check_line) {
+                                    self.hint.commit();
+                                    self.popup = None;
+                                    let msg = match builtin {
+                                        BuiltinCommand::CompletionGen(cmd) => {
+                                            self.hint.generate_completion(&cmd)
+                                        }
+                                    };
+                                    // Replace the intercepted command with an echo of the result.
+                                    // Ctrl+U erases what the shell has buffered, then we type
+                                    // the echo command and submit it — the shell runs it normally
+                                    // and reprints the prompt itself.
+                                    let msg_escaped = msg.trim().replace('\'', "'\\''");
+                                    let echo_cmd = format!("\x15echo '{}'\r", msg_escaped);
+                                    self.active_pty_write(echo_cmd.as_bytes());
+                                    if let Some(session) = &mut self.session {
+                                        if let Some(p) = session.active_tab_mut().active_pane_mut() {
+                                            p.scroll_off = 0;
+                                        }
+                                    }
+                                    if let Some(win) = &self.window { win.request_redraw(); }
+                                    return;
+                                }
+
                                 if let Some(trigger) = detect_trigger(check_line) {
                                     self.pending_render    = Some(trigger);
                                     self.capture_buf       = Vec::new();
@@ -1099,14 +1125,34 @@ impl ApplicationHandler for App {
                                 .map(|p| read_cursor_row(&p.grid, p.cursor.row))
                                 .unwrap_or_default();
                             let check_line = if grid_line.trim().is_empty() { self.hint.line.clone() } else { grid_line };
-                            if let Some(trigger) = detect_trigger(&check_line) {
-                                self.pending_render    = Some(trigger);
-                                self.capture_buf       = Vec::new();
-                                self.capture_last_byte = None;
-                                self.overlay           = None;
+                            if let Some(builtin) = detect_builtin(&check_line) {
+                                self.hint.commit();
+                                self.popup = None;
+                                let msg = match builtin {
+                                    BuiltinCommand::CompletionGen(cmd) => {
+                                        self.hint.generate_completion(&cmd)
+                                    }
+                                };
+                                let msg_escaped = msg.trim().replace('\'', "'\\''");
+                                let echo_cmd = format!("\x15echo '{}'\r", msg_escaped);
+                                self.active_pty_write(echo_cmd.as_bytes());
+                                if let Some(session) = &mut self.session {
+                                    if let Some(p) = session.active_tab_mut().active_pane_mut() {
+                                        p.scroll_off = 0;
+                                    }
+                                }
+                                if let Some(win) = &self.window { win.request_redraw(); }
+                                None
+                            } else {
+                                if let Some(trigger) = detect_trigger(&check_line) {
+                                    self.pending_render    = Some(trigger);
+                                    self.capture_buf       = Vec::new();
+                                    self.capture_last_byte = None;
+                                    self.overlay           = None;
+                                }
+                                self.hint.commit();
+                                Some(b"\r".to_vec())
                             }
-                            self.hint.commit();
-                            Some(b"\r".to_vec())
                         }
                         Key::Named(NamedKey::Backspace) => {
                             let mut line = self.hint.line.clone();

@@ -106,9 +106,24 @@ impl CompletionRegistry {
     pub fn get(&self, command: &str) -> Option<&CommandSpec> {
         self.specs.get(command)
     }
+
+    /// Reload all specs from disk (called after completion-gen writes a new file).
+    pub fn reload(&mut self) {
+        self.specs.clear();
+        if let Some(bundled) = bundled_dir() {
+            self.load_dir(&bundled);
+        }
+        if let Some(user) = user_completions_dir() {
+            self.load_dir(&user);
+        }
+    }
 }
 
 // ── Directory resolution ──────────────────────────────────────────────────────
+
+pub fn user_completions_dir_pub() -> Option<PathBuf> {
+    user_completions_dir()
+}
 
 fn user_completions_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;

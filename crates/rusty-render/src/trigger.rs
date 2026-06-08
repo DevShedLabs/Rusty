@@ -7,6 +7,32 @@ pub enum RenderTrigger {
     Json,
 }
 
+/// Built-in commands intercepted by rusty before reaching the shell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltinCommand {
+    /// `rusty completion-gen <command>` — generate a TOML completion spec.
+    CompletionGen(String),
+}
+
+/// Inspect the committed command line and return a built-in to handle, if any.
+pub fn detect_builtin(line: &str) -> Option<BuiltinCommand> {
+    let line = line.trim();
+    // Strip prompt prefix.
+    let line = match line.find(|c: char| c.is_ascii_alphanumeric() || c == '/' || c == '.') {
+        Some(pos) => &line[pos..],
+        None      => line,
+    };
+    let mut tokens = line.split_whitespace();
+    if tokens.next()? != "rusty" { return None; }
+    match tokens.next()? {
+        "completion-gen" => {
+            let cmd = tokens.next()?.to_owned();
+            Some(BuiltinCommand::CompletionGen(cmd))
+        }
+        _ => None,
+    }
+}
+
 /// Commands that output file content we can detect with certainty.
 const VIEW_COMMANDS: &[&str] = &["cat", "bat", "less", "more", "head", "tail"];
 

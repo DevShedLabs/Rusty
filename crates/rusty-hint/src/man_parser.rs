@@ -94,23 +94,57 @@ fn run_help(command: &str) -> Option<String> {
 
 /// Parse the text output of `--help` into a `CommandSpec`.
 ///
-/// Recognises patterns like:
+/// Recognises flags:
 ///   -v, --verbose          Enable verbose output
 ///   --output=<file>        Write output to file
-///   -o <file>              Write output to file
-///   --flag                 Description text
+///
+/// And subcommand sections headed by lines like:
+///   Available Commands:
+///   Commands:
+///   COMMANDS
 fn parse_help_output(command: &str, text: &str) -> CommandSpec {
     let mut flags: Vec<FlagSpec> = Vec::new();
+    let mut subcommands: Vec<crate::completions::SubcommandSpec> = Vec::new();
     let mut seen_long: std::collections::HashSet<String> = Default::default();
+    let mut seen_sub: std::collections::HashSet<String> = Default::default();
+
+    // Track whether we are inside a commands/subcommands section.
+    #[derive(PartialEq)]
+    enum Section { Other, Commands }
+    let mut section = Section::Other;
 
     for line in text.lines() {
+        // Detect section headers.
+        let trimmed_lower = line.trim().to_lowercase();
+        if trimmed_lower.starts_with("available commands")
+            || trimmed_lower.starts_with("commands")
+            || trimmed_lower.starts_with("subcommands")
+        {
+            section = Section::Commands;
+            continue;
+        }
+        // Any non-indented non-empty line that isn't a section header ends the commands section.
+        if !line.starts_with(' ') && !line.starts_with('\t') && !line.trim().is_empty() {
+            section = Section::Other;
+        }
+
         let trimmed = line.trim();
+
+        if section == Section::Commands && !trimmed.is_empty() && !trimmed.starts_with('-') {
+            // Subcommand line: "  name    description" — two or more spaces as separator.
+            if let Some(sub) = parse_subcommand_line(trimmed) {
+                if seen_sub.insert(sub.name.clone().unwrap_or_default()) {
+                    subcommands.push(sub);
+                }
+            }
+            continue;
+        }
+
         if !trimmed.starts_with('-') {
             continue;
         }
 
         if let Some(flag) = parse_flag_line(trimmed) {
-            // Deduplicate by long flag name.
             let key = flag.long.clone().or_else(|| flag.short.clone()).unwrap_or_default();
             if !key.is_empty() && seen_long.insert(key) {
                 flags.push(flag);
@@ -122,9 +156,30 @@ fn parse_help_output(command: &str, text: &str) -> CommandSpec {
         command: command.to_owned(),
         description: None,
         flags,
-        subcommands: vec![],
+        subcommands,
         args: crate::completions::ArgsType::Any,
     }
+}
+
+/// Parse an indented subcommand line like "  audit       Vulnerability scan only".
+fn parse_subcommand_line(trimmed: &str) -> Option<crate::completions::SubcommandSpec> {
+    // Split at two or more spaces.
+    let (name_part, desc) = split_flag_desc(trimmed);
+    let name = name_part.trim().to_owned();
+    // Reject obviously bad tokens: contains slashes, brackets, longer than 40 chars.
+    if name.is_empty() || name.len() > 40 || name.contains('/') || name.contains('[') {
+        return None;
+    }
+    // Must be a single word (no internal spaces after trim).
+    if name.contains(' ') {
+        return None;
+    }
+    Some(crate::completions::SubcommandSpec {
+        name: Some(name),
+        description: desc.map(str::to_owned),
+        flags: vec![],
+        subcommands: vec![],
+    })
 }
 
 /// Try to extract a `FlagSpec` from a single help line.

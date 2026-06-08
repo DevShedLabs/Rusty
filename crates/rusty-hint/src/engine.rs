@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use crate::completions::{CompletionRegistry, flag_suggestions, subcommand_suggestions};
 use crate::index::CompletionIndex;
+use crate::man_parser::spec_from_help;
 
 // ── Ghost hint (history only) ─────────────────────────────────────────────────
 
@@ -83,6 +84,48 @@ impl HintEngine {
         }
         self.line.clear();
         self.ghost = None;
+    }
+
+    /// Generate a TOML completion spec for `command` by running `command --help`,
+    /// write it to `~/.config/rusty/completions/<command>.toml`, then reload the
+    /// registry so completions are available immediately without restarting.
+    ///
+    /// Returns a human-readable message suitable for printing to the terminal.
+    pub fn generate_completion(&mut self, command: &str) -> String {
+        let Some(spec) = spec_from_help(command) else {
+            return format!(
+                "rusty: completion-gen: '{}' produced no usable --help output\r\n",
+                command
+            );
+        };
+
+        // Serialise to TOML.
+        let toml_text = match spec_to_toml(&spec) {
+            Ok(t)  => t,
+            Err(e) => return format!("rusty: completion-gen: serialise error: {e}\r\n"),
+        };
+
+        // Write to user completions dir.
+        let Some(dir) = user_completions_dir() else {
+            return "rusty: completion-gen: could not determine completions directory\r\n".into();
+        };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return format!("rusty: completion-gen: create dir {:?}: {e}\r\n", dir);
+        }
+        let path = dir.join(format!("{command}.toml"));
+        if let Err(e) = std::fs::write(&path, &toml_text) {
+            return format!("rusty: completion-gen: write {:?}: {e}\r\n", path);
+        }
+
+        // Hot-reload so the new spec is active immediately.
+        self.registry.reload();
+
+        format!(
+            "rusty: completion-gen: wrote {} ({} flags) → {:?}\r\n",
+            command,
+            spec.flags.len(),
+            path,
+        )
     }
 
     pub fn update_line(&mut self, line: &str) {
@@ -240,6 +283,60 @@ impl HintEngine {
 
 impl Default for HintEngine {
     fn default() -> Self { Self::new(false) }
+}
+
+// ── TOML serialiser ──────────────────────────────────────────────────────────
+// Hand-rolled — avoids adding serde's Serialize derive to all spec types just
+// for this one use case.
+
+fn spec_to_toml(spec: &crate::completions::CommandSpec) -> Result<String, String> {
+    let mut out = String::new();
+
+    out.push_str(&format!("command     = {:?}\n", spec.command));
+    if let Some(d) = &spec.description {
+        out.push_str(&format!("description = {:?}\n", d));
+    }
+    out.push('\n');
+
+    for f in &spec.flags {
+        push_flag(&mut out, f);
+    }
+
+    for sub in &spec.subcommands {
+        let name = sub.name.as_deref().unwrap_or("");
+        out.push_str("[[subcommands]]\n");
+        out.push_str(&format!("name        = {:?}\n", name));
+        if let Some(d) = &sub.description {
+            out.push_str(&format!("description = {:?}\n", d));
+        }
+        out.push('\n');
+        for f in &sub.flags {
+            out.push_str("[[subcommands.flags]]\n");
+            push_flag_body(&mut out, f);
+        }
+    }
+
+    Ok(out)
+}
+
+fn push_flag(out: &mut String, f: &crate::completions::FlagSpec) {
+    out.push_str("[[flags]]\n");
+    push_flag_body(out, f);
+}
+
+fn push_flag_body(out: &mut String, f: &crate::completions::FlagSpec) {
+    if let Some(l) = &f.long  { out.push_str(&format!("long        = {:?}\n", l)); }
+    if let Some(s) = &f.short { out.push_str(&format!("short       = {:?}\n", s)); }
+    if let Some(d) = &f.description { out.push_str(&format!("description = {:?}\n", d)); }
+    if f.takes_value {
+        out.push_str("takes_value = true\n");
+        if let Some(h) = &f.value_hint { out.push_str(&format!("value_hint  = {:?}\n", h)); }
+    }
+    out.push('\n');
+}
+
+fn user_completions_dir() -> Option<std::path::PathBuf> {
+    crate::completions::user_completions_dir_pub()
 }
 
 // ── Path helpers ──────────────────────────────────────────────────────────────

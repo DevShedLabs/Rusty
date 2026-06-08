@@ -138,6 +138,44 @@ The Tab key syncs the engine's view of the current line from the actual terminal
 fuzzy_history = false
 ```
 
+## Generating a spec automatically
+
+Rusty includes a built-in generator that runs a command's `--help` output and produces a TOML spec for it.
+
+```
+rusty completion-gen <command>
+```
+
+For example:
+
+```
+rusty completion-gen curl
+rusty completion-gen devscan
+rusty completion-gen kubectl
+```
+
+The generator:
+
+1. Runs `<command> --help` (falls back to `-h` if needed).
+2. Parses flag lines (`--flag`, `-f`) and subcommand sections (any section whose header contains the word "commands" or "subcommands", e.g. `Available Commands:`, `COMMANDS`).
+3. Writes a `.toml` file to `~/.config/rusty/completions/<command>.toml`.
+4. Hot-reloads the registry so the spec is active immediately **in the current session**.
+
+> **You must restart Rusty** for a newly generated spec to appear in a fresh session. Hot-reload only applies to the session in which `completion-gen` was run.
+
+Generated specs can be edited by hand at `~/.config/rusty/completions/<command>.toml` to add missing flags, fix descriptions, or set `args = "file"` / `args = "directory"`.
+
+### What gets parsed
+
+| Help output pattern | Result |
+|---------------------|--------|
+| `-v, --verbose   description` | Flag with short + long form |
+| `--output=<file>   description` | Flag with value hint |
+| `Available Commands:` / `Commands:` / `Subcommands:` header | Starts subcommand section |
+| `  name    description` (indented, two spaces) | Subcommand entry |
+
+Programs that dump their help to a pager (`less`, `more`) are handled automatically — the generator sets `PAGER=cat` before invoking the command.
+
 ## Adding a spec to the repo
 
 1. Create `completions-toml/<command>.toml` following the schema above.
