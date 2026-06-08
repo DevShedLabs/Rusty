@@ -1,0 +1,117 @@
+command     = "ansible-vault"
+description = "Encryption/decryption utility for Ansible data files"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "Show help message and exit"
+
+[[flags]]
+long        = "vault-id"
+description = "The vault identity to use"
+takes_value = true
+value_hint  = "vault-id"
+
+[[flags]]
+long        = "ask-vault-pass"
+description = "Ask for vault password"
+
+[[flags]]
+long        = "vault-password-file"
+description = "Vault password file"
+takes_value = true
+value_hint  = "file"
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Verbose mode"
+
+[[subcommands]]
+name        = "create"
+description = "Create a new encrypted file"
+
+[[subcommands.flags]]
+long        = "vault-id"
+description = "The vault identity to use"
+takes_value = true
+value_hint  = "vault-id"
+
+[[subcommands.flags]]
+long        = "vault-password-file"
+description = "Vault password file"
+takes_value = true
+value_hint  = "file"
+
+[[subcommands]]
+name        = "decrypt"
+description = "Decrypt encrypted files"
+args        = "file"
+
+[[subcommands.flags]]
+long        = "output"
+description = "Output file name for decrypt (default: overwrite input)"
+takes_value = true
+value_hint  = "file"
+
+[[subcommands]]
+name        = "edit"
+description = "Edit an encrypted file"
+
+[[subcommands]]
+name        = "encrypt"
+description = "Encrypt files"
+args        = "file"
+
+[[subcommands.flags]]
+long        = "output"
+description = "Output file name for encrypt (default: overwrite input)"
+takes_value = true
+value_hint  = "file"
+
+[[subcommands.flags]]
+long        = "vault-id"
+description = "The vault identity to use"
+takes_value = true
+value_hint  = "vault-id"
+
+[[subcommands]]
+name        = "encrypt_string"
+description = "Encrypt a string passed as an argument"
+
+[[subcommands.flags]]
+long        = "name"
+short       = "n"
+description = "The variable name to use"
+takes_value = true
+value_hint  = "name"
+
+[[subcommands.flags]]
+long        = "stdin-name"
+description = "The variable name for the string read from stdin"
+takes_value = true
+value_hint  = "name"
+
+[[subcommands.flags]]
+long        = "show-input"
+description = "Do not obfuscate the user input when prompting for the secret"
+
+[[subcommands]]
+name        = "rekey"
+description = "Re-key a vault encrypted file to use a new secret"
+
+[[subcommands.flags]]
+long        = "new-vault-id"
+description = "The new vault identity to use for rekey"
+takes_value = true
+value_hint  = "vault-id"
+
+[[subcommands.flags]]
+long        = "new-vault-password-file"
+description = "New vault password file for rekey"
+takes_value = true
+value_hint  = "file"
+
+[[subcommands]]
+name        = "view"
+description = "View the contents of an encrypted file"

@@ -1,0 +1,535 @@
+command     = "npm"
+description = "JavaScript package manager"
+
+[[flags]]
+long        = "version"
+short       = "v"
+description = "Print npm version"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "Show help"
+
+[[flags]]
+long        = "global"
+short       = "g"
+description = "Operate in global mode"
+
+[[flags]]
+long        = "save"
+short       = "S"
+description = "Save to dependencies in package.json"
+
+[[flags]]
+long        = "save-dev"
+short       = "D"
+description = "Save to devDependencies in package.json"
+
+[[flags]]
+long        = "save-exact"
+short       = "E"
+description = "Save exact version instead of semver range"
+
+[[flags]]
+long        = "save-optional"
+short       = "O"
+description = "Save to optionalDependencies in package.json"
+
+[[flags]]
+long        = "no-save"
+description = "Prevent saving to dependencies"
+
+[[flags]]
+long        = "verbose"
+description = "Show verbose output"
+
+[[flags]]
+long        = "silent"
+short       = "s"
+description = "Only show errors"
+
+[[flags]]
+long        = "dry-run"
+description = "Report what would have been done without actually doing it"
+
+[[flags]]
+long        = "prefix"
+description = "Set the npm prefix"
+takes_value = true
+value_hint  = "path"
+
+[[flags]]
+long        = "registry"
+description = "Override registry URL"
+takes_value = true
+value_hint  = "url"
+
+[[flags]]
+long        = "tag"
+description = "Tag used when publishing"
+takes_value = true
+value_hint  = "tag"
+
+[[flags]]
+long        = "access"
+description = "Publish access level (public or restricted)"
+takes_value = true
+value_hint  = "level"
+
+[[flags]]
+long        = "legacy-peer-deps"
+description = "Ignore peer dependency conflicts"
+
+[[flags]]
+long        = "force"
+short       = "f"
+description = "Force npm to do things it would normally refuse"
+
+[[flags]]
+long        = "json"
+description = "Output as JSON"
+
+[[flags]]
+long        = "long"
+short       = "l"
+description = "Show extended information"
+
+[[flags]]
+long        = "parseable"
+short       = "p"
+description = "Output parseable results from commands that produce output"
+
+[[flags]]
+long        = "workspace"
+short       = "w"
+description = "Enable running a command in the context of a workspace"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "workspaces"
+short       = "ws"
+description = "Enable running a command in all workspaces"
+
+[[subcommands]]
+name        = "install"
+description = "Install a package"
+
+[[subcommands.flags]]
+long        = "save-dev"
+short       = "D"
+description = "Save to devDependencies"
+
+[[subcommands.flags]]
+long        = "save-exact"
+short       = "E"
+description = "Save exact version"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Install globally"
+
+[[subcommands.flags]]
+long        = "legacy-peer-deps"
+description = "Ignore peer dependency conflicts"
+
+[[subcommands.flags]]
+long        = "no-package-lock"
+description = "Skip creating package-lock.json"
+
+[[subcommands.flags]]
+long        = "dry-run"
+description = "Report what would have been done"
+
+[[subcommands]]
+name        = "i"
+description = "Alias for install"
+
+[[subcommands]]
+name        = "uninstall"
+description = "Remove a package"
+
+[[subcommands.flags]]
+long        = "save-dev"
+short       = "D"
+description = "Remove from devDependencies"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Remove globally installed package"
+
+[[subcommands]]
+name        = "un"
+description = "Alias for uninstall"
+
+[[subcommands]]
+name        = "run"
+description = "Run a script defined in package.json"
+
+[[subcommands.flags]]
+long        = "if-present"
+description = "Do not error if the script is undefined"
+
+[[subcommands.flags]]
+long        = "silent"
+description = "Suppress script output"
+
+[[subcommands]]
+name        = "run-script"
+description = "Alias for run"
+
+[[subcommands]]
+name        = "start"
+description = "Start a package (runs npm run start)"
+
+[[subcommands]]
+name        = "stop"
+description = "Stop a package (runs npm run stop)"
+
+[[subcommands]]
+name        = "test"
+description = "Test a package (runs npm run test)"
+
+[[subcommands]]
+name        = "t"
+description = "Alias for test"
+
+[[subcommands]]
+name        = "build"
+description = "Build a package (runs npm run build)"
+
+[[subcommands]]
+name        = "restart"
+description = "Restart a package"
+
+[[subcommands]]
+name        = "update"
+description = "Update packages to latest allowed version"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Update globally installed packages"
+
+[[subcommands]]
+name        = "up"
+description = "Alias for update"
+
+[[subcommands]]
+name        = "outdated"
+description = "Check for outdated packages"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Check globally installed packages"
+
+[[subcommands.flags]]
+long        = "long"
+short       = "l"
+description = "Show extended information"
+
+[[subcommands]]
+name        = "ls"
+description = "List installed packages"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "List globally installed packages"
+
+[[subcommands.flags]]
+long        = "depth"
+description = "Max display depth of the dependency tree"
+takes_value = true
+value_hint  = "n"
+
+[[subcommands.flags]]
+long        = "json"
+description = "Output as JSON"
+
+[[subcommands.flags]]
+long        = "long"
+short       = "l"
+description = "Show extended information"
+
+[[subcommands]]
+name        = "list"
+description = "Alias for ls"
+
+[[subcommands]]
+name        = "publish"
+description = "Publish a package to the registry"
+
+[[subcommands.flags]]
+long        = "access"
+description = "Publish access level: public or restricted"
+takes_value = true
+value_hint  = "level"
+
+[[subcommands.flags]]
+long        = "tag"
+description = "Tag to publish under"
+takes_value = true
+value_hint  = "tag"
+
+[[subcommands.flags]]
+long        = "dry-run"
+description = "Report what would have been published"
+
+[[subcommands]]
+name        = "unpublish"
+description = "Remove a package from the registry"
+
+[[subcommands]]
+name        = "pack"
+description = "Create a tarball from a package"
+
+[[subcommands.flags]]
+long        = "dry-run"
+description = "Report what would have been packed"
+
+[[subcommands]]
+name        = "link"
+description = "Symlink a package folder"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Link globally"
+
+[[subcommands]]
+name        = "ln"
+description = "Alias for link"
+
+[[subcommands]]
+name        = "init"
+description = "Interactively create a package.json file"
+
+[[subcommands.flags]]
+long        = "yes"
+short       = "y"
+description = "Accept all defaults without prompting"
+
+[[subcommands.flags]]
+long        = "scope"
+description = "Create a scoped package"
+takes_value = true
+value_hint  = "scope"
+
+[[subcommands]]
+name        = "create"
+description = "Create a new package using a generator (npm init <initializer>)"
+
+[[subcommands]]
+name        = "ci"
+description = "Clean install from package-lock.json"
+
+[[subcommands.flags]]
+long        = "ignore-scripts"
+description = "Do not run install scripts"
+
+[[subcommands]]
+name        = "audit"
+description = "Run a security audit"
+
+[[subcommands.flags]]
+long        = "fix"
+description = "Automatically fix vulnerabilities"
+
+[[subcommands.flags]]
+long        = "json"
+description = "Output as JSON"
+
+[[subcommands]]
+name        = "fund"
+description = "Show funding information for installed packages"
+
+[[subcommands]]
+name        = "config"
+description = "Manage the npm configuration files"
+
+[[subcommands.flags]]
+long        = "global"
+short       = "g"
+description = "Operate on the global config"
+
+[[subcommands]]
+name        = "set"
+description = "Sets a value in npm config"
+
+[[subcommands]]
+name        = "get"
+description = "Gets a value from npm config"
+
+[[subcommands]]
+name        = "cache"
+description = "Manipulates the npm cache"
+
+[[subcommands]]
+name        = "search"
+description = "Search the npm registry"
+
+[[subcommands.flags]]
+long        = "long"
+short       = "l"
+description = "Show extended information"
+
+[[subcommands.flags]]
+long        = "json"
+description = "Output as JSON"
+
+[[subcommands.flags]]
+long        = "parseable"
+short       = "p"
+description = "Output parseable results"
+
+[[subcommands]]
+name        = "view"
+description = "View registry info for a package"
+
+[[subcommands.flags]]
+long        = "json"
+description = "Output as JSON"
+
+[[subcommands]]
+name        = "info"
+description = "Alias for view"
+
+[[subcommands]]
+name        = "show"
+description = "Alias for view"
+
+[[subcommands]]
+name        = "dedupe"
+description = "Reduce duplication in the dependency tree"
+
+[[subcommands]]
+name        = "prune"
+description = "Remove extraneous packages"
+
+[[subcommands.flags]]
+long        = "production"
+description = "Remove devDependencies"
+
+[[subcommands]]
+name        = "whoami"
+description = "Display npm username"
+
+[[subcommands]]
+name        = "login"
+description = "Log in to a registry"
+
+[[subcommands]]
+name        = "adduser"
+description = "Add a registry user account"
+
+[[subcommands]]
+name        = "logout"
+description = "Log out of the registry"
+
+[[subcommands]]
+name        = "owner"
+description = "Manage package owners"
+
+[[subcommands]]
+name        = "access"
+description = "Set access level on published packages"
+
+[[subcommands]]
+name        = "team"
+description = "Manage organisation teams and memberships"
+
+[[subcommands]]
+name        = "org"
+description = "Manage orgs"
+
+[[subcommands]]
+name        = "dist-tag"
+description = "Modify package distribution tags"
+
+[[subcommands]]
+name        = "deprecate"
+description = "Deprecate a version of a package"
+
+[[subcommands]]
+name        = "version"
+description = "Bump a package version"
+
+[[subcommands.flags]]
+long        = "message"
+short       = "m"
+description = "Commit message for the version bump"
+takes_value = true
+value_hint  = "msg"
+
+[[subcommands]]
+name        = "prefix"
+description = "Display prefix"
+
+[[subcommands]]
+name        = "root"
+description = "Display npm root"
+
+[[subcommands]]
+name        = "bin"
+description = "Display npm bin folder"
+
+[[subcommands]]
+name        = "bugs"
+description = "Open the bug tracker for a package"
+
+[[subcommands]]
+name        = "docs"
+description = "Open the docs for a package in a browser"
+
+[[subcommands]]
+name        = "repo"
+description = "Open the repository page for a package"
+
+[[subcommands]]
+name        = "explore"
+description = "Browse an installed package"
+
+[[subcommands]]
+name        = "rebuild"
+description = "Rebuild a package"
+
+[[subcommands]]
+name        = "exec"
+description = "Run a command from a local or remote npm package"
+
+[[subcommands]]
+name        = "ping"
+description = "Ping the npm registry"
+
+[[subcommands]]
+name        = "doctor"
+description = "Check your environment for npm issues"
+
+[[subcommands]]
+name        = "diff"
+description = "Show diff of a package"
+
+[[subcommands]]
+name        = "query"
+description = "Retrieve a filtered list of packages"
+
+[[subcommands]]
+name        = "explain"
+description = "Explain the chain of dependencies causing a package to be installed"
+
+[[subcommands]]
+name        = "why"
+description = "Alias for explain"
+
+[[subcommands]]
+name        = "help"
+description = "Get help on npm"
+
+[[subcommands]]
+name        = "completion"
+description = "Tab completion for npm"

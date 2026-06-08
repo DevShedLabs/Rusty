@@ -1,0 +1,187 @@
+command     = "ansible"
+description = "Run ad-hoc commands on managed hosts"
+
+[[flags]]
+long        = "version"
+description = "Show program's version number and exit"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "Show help message and exit"
+
+[[flags]]
+long        = "inventory"
+short       = "i"
+description = "Specify inventory host path or comma separated host list"
+takes_value = true
+value_hint  = "inventory"
+
+[[flags]]
+long        = "module-name"
+short       = "m"
+description = "Module name to execute (default=command)"
+takes_value = true
+value_hint  = "module"
+
+[[flags]]
+long        = "args"
+short       = "a"
+description = "Module arguments"
+takes_value = true
+value_hint  = "args"
+
+[[flags]]
+long        = "become"
+short       = "b"
+description = "Run operations with become (privilege escalation)"
+
+[[flags]]
+long        = "become-method"
+description = "Privilege escalation method to use (sudo/su/pbrun/pfexec/doas/dzdo/ksu/runas)"
+takes_value = true
+value_hint  = "method"
+
+[[flags]]
+long        = "become-user"
+description = "Run operations as this user (default=root)"
+takes_value = true
+value_hint  = "user"
+
+[[flags]]
+long        = "ask-become-pass"
+short       = "K"
+description = "Ask for privilege escalation password"
+
+[[flags]]
+long        = "user"
+short       = "u"
+description = "Connect as this user"
+takes_value = true
+value_hint  = "user"
+
+[[flags]]
+long        = "ask-pass"
+short       = "k"
+description = "Ask for connection password"
+
+[[flags]]
+long        = "private-key"
+description = "Use this file to authenticate the connection"
+takes_value = true
+value_hint  = "key-file"
+
+[[flags]]
+long        = "ssh-common-args"
+description = "Common extra args for all SSH CLI tools"
+takes_value = true
+value_hint  = "args"
+
+[[flags]]
+long        = "sftp-extra-args"
+description = "Extra args for SFTP"
+takes_value = true
+value_hint  = "args"
+
+[[flags]]
+long        = "scp-extra-args"
+description = "Extra args for SCP"
+takes_value = true
+value_hint  = "args"
+
+[[flags]]
+long        = "ssh-extra-args"
+description = "Extra args for SSH"
+takes_value = true
+value_hint  = "args"
+
+[[flags]]
+long        = "timeout"
+short       = "T"
+description = "Override connection timeout in seconds"
+takes_value = true
+value_hint  = "seconds"
+
+[[flags]]
+long        = "connection"
+short       = "c"
+description = "Connection type to use (default=smart)"
+takes_value = true
+value_hint  = "type"
+
+[[flags]]
+long        = "forks"
+short       = "f"
+description = "Specify number of parallel processes to use"
+takes_value = true
+value_hint  = "n"
+
+[[flags]]
+long        = "limit"
+short       = "l"
+description = "Further limit selected hosts to an additional pattern"
+takes_value = true
+value_hint  = "pattern"
+
+[[flags]]
+long        = "check"
+short       = "C"
+description = "Dry run — do not make any changes"
+
+[[flags]]
+long        = "diff"
+short       = "D"
+description = "Show diffs for files that are changed"
+
+[[flags]]
+long        = "extra-vars"
+short       = "e"
+description = "Set additional variables as key=value or YAML/JSON"
+takes_value = true
+value_hint  = "vars"
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Verbose mode (-vvv for more, -vvvv for connection debug)"
+
+[[flags]]
+long        = "one-line"
+short       = "o"
+description = "Condense output"
+
+[[flags]]
+long        = "tree"
+short       = "t"
+description = "Log output to this directory"
+takes_value = true
+value_hint  = "dir"
+
+[[flags]]
+long        = "poll"
+short       = "P"
+description = "Set the poll interval if using -B (default=15)"
+takes_value = true
+value_hint  = "seconds"
+
+[[flags]]
+long        = "background"
+short       = "B"
+description = "Run asynchronously, failing after X seconds"
+takes_value = true
+value_hint  = "seconds"
+
+[[flags]]
+long        = "list-hosts"
+description = "Outputs a list of matching hosts"
+
+[[flags]]
+long        = "syntax-check"
+description = "Perform a syntax check on the playbook"
+
+[[flags]]
+long        = "module-path"
+short       = "M"
+description = "Prepend colon-separated path to module library"
+takes_value = true
+value_hint  = "path"

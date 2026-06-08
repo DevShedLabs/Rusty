@@ -1,0 +1,175 @@
+command     = "ansible-playbook"
+description = "Run Ansible playbooks"
+args        = "file"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "Show help message and exit"
+
+[[flags]]
+long        = "inventory"
+short       = "i"
+description = "Specify inventory host path or comma separated host list"
+takes_value = true
+value_hint  = "inventory"
+
+[[flags]]
+long        = "limit"
+short       = "l"
+description = "Further limit selected hosts to an additional pattern"
+takes_value = true
+value_hint  = "pattern"
+
+[[flags]]
+long        = "tags"
+short       = "t"
+description = "Only run plays and tasks tagged with these values"
+takes_value = true
+value_hint  = "tags"
+
+[[flags]]
+long        = "skip-tags"
+description = "Only run plays and tasks whose tags do not match"
+takes_value = true
+value_hint  = "tags"
+
+[[flags]]
+long        = "start-at-task"
+description = "Start the playbook at the task matching this name"
+takes_value = true
+value_hint  = "task"
+
+[[flags]]
+long        = "step"
+description = "One-step-at-a-time: confirm each task before running"
+
+[[flags]]
+long        = "check"
+short       = "C"
+description = "Dry run — do not make any changes"
+
+[[flags]]
+long        = "diff"
+short       = "D"
+description = "Show diffs for files that are changed"
+
+[[flags]]
+long        = "syntax-check"
+description = "Perform a syntax check on the playbook and exit"
+
+[[flags]]
+long        = "list-tasks"
+description = "List all tasks that would be executed"
+
+[[flags]]
+long        = "list-hosts"
+description = "Outputs a list of matching hosts"
+
+[[flags]]
+long        = "list-tags"
+description = "List all available tags"
+
+[[flags]]
+long        = "become"
+short       = "b"
+description = "Run operations with become"
+
+[[flags]]
+long        = "become-method"
+description = "Privilege escalation method"
+takes_value = true
+value_hint  = "method"
+
+[[flags]]
+long        = "become-user"
+description = "Run operations as this user"
+takes_value = true
+value_hint  = "user"
+
+[[flags]]
+long        = "ask-become-pass"
+short       = "K"
+description = "Ask for privilege escalation password"
+
+[[flags]]
+long        = "ask-pass"
+short       = "k"
+description = "Ask for connection password"
+
+[[flags]]
+long        = "private-key"
+description = "Use this file to authenticate the connection"
+takes_value = true
+value_hint  = "key-file"
+
+[[flags]]
+long        = "user"
+short       = "u"
+description = "Connect as this user"
+takes_value = true
+value_hint  = "user"
+
+[[flags]]
+long        = "extra-vars"
+short       = "e"
+description = "Set additional variables as key=value or YAML/JSON"
+takes_value = true
+value_hint  = "vars"
+
+[[flags]]
+long        = "forks"
+short       = "f"
+description = "Specify number of parallel processes to use"
+takes_value = true
+value_hint  = "n"
+
+[[flags]]
+long        = "timeout"
+short       = "T"
+description = "Override connection timeout in seconds"
+takes_value = true
+value_hint  = "seconds"
+
+[[flags]]
+long        = "connection"
+short       = "c"
+description = "Connection type to use"
+takes_value = true
+value_hint  = "type"
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Verbose mode (-vvv for more, -vvvv for connection debug)"
+
+[[flags]]
+long        = "flush-cache"
+description = "Clear the fact cache for every host in inventory"
+
+[[flags]]
+long        = "force-handlers"
+description = "Run handlers even if a task fails"
+
+[[flags]]
+long        = "module-path"
+short       = "M"
+description = "Prepend colon-separated path to module library"
+takes_value = true
+value_hint  = "path"
+
+[[flags]]
+long        = "vault-id"
+description = "The vault identity to use"
+takes_value = true
+value_hint  = "vault-id"
+
+[[flags]]
+long        = "ask-vault-pass"
+description = "Ask for vault password"
+
+[[flags]]
+long        = "vault-password-file"
+description = "Vault password file"
+takes_value = true
+value_hint  = "file"
