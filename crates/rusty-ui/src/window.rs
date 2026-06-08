@@ -1005,6 +1005,15 @@ impl ApplicationHandler for App {
                                 self.active_pty_write(write_str.as_bytes());
                                 return;
                             }
+                            // Modifier-only keypresses (Shift, Cmd, Ctrl, Option) must
+                            // not close the popup — the user may be starting a system
+                            // shortcut (e.g. Shift+Cmd+4 for a screenshot) while the
+                            // popup is open.
+                            Key::Named(
+                                NamedKey::Shift   | NamedKey::Control | NamedKey::Alt   |
+                                NamedKey::Super   | NamedKey::Meta    | NamedKey::Hyper |
+                                NamedKey::AltGraph
+                            ) => { /* keep popup open */ }
                             _ => { self.popup = None; }
                         }
                     }
