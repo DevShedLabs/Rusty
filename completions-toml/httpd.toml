@@ -1,0 +1,70 @@
+command     = "httpd"
+
+[[flags]]
+short       = "D"
+description = ": define a name for use in <IfDefine name> directives"
+
+[[flags]]
+short       = "d"
+description = ": specify an alternate initial ServerRoot"
+
+[[flags]]
+short       = "f"
+description = ": specify an alternate ServerConfigFile"
+
+[[flags]]
+short       = "C"
+description = ": process directive before reading config files"
+
+[[flags]]
+short       = "c"
+description = ": process directive after reading config files"
+
+[[flags]]
+short       = "e"
+description = ": show startup errors of level (see LogLevel)"
+
+[[flags]]
+short       = "E"
+description = ": log startup errors to file"
+
+[[flags]]
+short       = "v"
+description = ": show version number"
+
+[[flags]]
+short       = "V"
+description = ": show compile settings"
+
+[[flags]]
+short       = "h"
+description = ": list available command line options (this page)"
+
+[[flags]]
+short       = "l"
+description = ": list compiled in modules"
+
+[[flags]]
+short       = "L"
+description = ": list available configuration directives"
+
+[[flags]]
+short       = "S"
+description = ": a synonym for -t -D DUMP_VHOSTS -D DUMP_RUN_CFG"
+
+[[flags]]
+short       = "M"
+description = ": a synonym for -t -D DUMP_MODULES"
+
+[[flags]]
+short       = "t"
+description = ": run syntax check for config files"
+
+[[flags]]
+short       = "T"
+description = ": start without DocumentRoot(s) check"
+
+[[flags]]
+short       = "X"
+description = ": debug mode (only one worker, do not detach)"
+
