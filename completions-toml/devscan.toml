@@ -1,0 +1,96 @@
+command     = "devscan"
+
+[[flags]]
+long        = "depth"
+description = "Traverse subdirectories up to this depth looking for projects (0 = path only)"
+
+[[flags]]
+long        = "ecosystem"
+description = "Filter by ecosystem: npm|pypi|gem|go"
+
+[[flags]]
+long        = "format"
+description = "Output format: table|json|compact (default \"table\")"
+
+[[flags]]
+long        = "global"
+description = "Scan global packages (default)"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "help for devscan"
+
+[[flags]]
+long        = "no-cache"
+description = "Bypass cache and force a fresh advisory lookup"
+
+[[flags]]
+long        = "no-color"
+description = "Disable color output"
+
+[[flags]]
+long        = "path"
+description = "Explicit project path to scan"
+
+[[flags]]
+long        = "project"
+description = "Scan current project directory"
+
+[[flags]]
+long        = "severity"
+description = "Filter by severity: critical|high|medium|low"
+
+[[flags]]
+long        = "version"
+short       = "v"
+description = "version for devscan"
+
+[[subcommands]]
+name        = "audit"
+description = "Vulnerability scan only"
+
+[[subcommands]]
+name        = "completion"
+description = "Generate the autocompletion script for the specified shell"
+
+[[subcommands]]
+name        = "doctor"
+description = "Full system scan: runtimes, packages, vulnerabilities, and outdated deps"
+
+[[subcommands]]
+name        = "fix"
+description = "Suggest fix commands for vulnerabilities and outdated packages"
+
+[[subcommands]]
+name        = "help"
+description = "Help about any command"
+
+[[subcommands]]
+name        = "keyscan"
+description = "Scan files for exposed secrets and API keys"
+
+[[subcommands]]
+name        = "list"
+description = "List detected runtimes and installed packages"
+
+[[subcommands]]
+name        = "locate"
+description = "Show filesystem paths for vulnerable or outdated packages"
+
+[[subcommands]]
+name        = "outdated"
+description = "Show outdated runtimes and packages"
+
+[[subcommands]]
+name        = "report"
+description = "Generate a full scan report in the specified format"
+
+[[subcommands]]
+name        = "scan"
+description = "Raw detection only: runtimes and packages (no vuln intelligence)"
+
+[[subcommands]]
+name        = "update"
+description = "Update devscan to the latest release"
+

@@ -1,0 +1,62 @@
+command     = "curl"
+
+[[flags]]
+long        = "data"
+short       = "d"
+description = "HTTP POST data"
+
+[[flags]]
+long        = "fail"
+short       = "f"
+description = "Fail fast with no output on HTTP errors"
+
+[[flags]]
+long        = "help"
+short       = "h"
+description = "Get help for commands"
+
+[[flags]]
+long        = "include"
+short       = "i"
+description = "Include response headers in output"
+
+[[flags]]
+long        = "output"
+short       = "o"
+description = "Write to file instead of stdout"
+
+[[flags]]
+long        = "remote-name"
+short       = "O"
+description = "Write output to file named as remote file"
+
+[[flags]]
+long        = "silent"
+short       = "s"
+description = "Silent mode"
+
+[[flags]]
+long        = "upload-file"
+short       = "T"
+description = "Transfer local FILE to destination"
+
+[[flags]]
+long        = "user"
+short       = "u"
+description = "Server user and password"
+
+[[flags]]
+long        = "user-agent"
+short       = "A"
+description = "Send User-Agent <name> to server"
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Make the operation more talkative"
+
+[[flags]]
+long        = "version"
+short       = "V"
+description = "Show version number and quit"
+
