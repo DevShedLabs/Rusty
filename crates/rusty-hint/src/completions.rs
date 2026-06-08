@@ -139,12 +139,17 @@ fn bundled_dir() -> Option<PathBuf> {
 
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
-    // Release / app bundle locations.
-    // Dev: binary is at target/debug/rusty, so ../.. reaches the workspace root.
+    // Check in order:
+    //   1. Next to binary (Linux/generic install)
+    //   2. macOS app bundle: Contents/MacOS/../Resources/completions
+    //   3. Linux share dir
+    //   4. Dev builds: target/debug or target/release → workspace root
+    //   5. target/debug/deps → workspace root
     let candidates = [
         exe_dir.join("completions"),
+        exe_dir.join("../Resources/completions"),          // macOS .app bundle
         exe_dir.join("../share/rusty/completions"),
-        exe_dir.join("../..").join("completions-toml"),   // target/debug → workspace root
+        exe_dir.join("../..").join("completions-toml"),    // target/{debug,release} → workspace root
         exe_dir.join("../../..").join("completions-toml"), // target/debug/deps → workspace root
     ];
     candidates.into_iter().find(|p| p.is_dir())
