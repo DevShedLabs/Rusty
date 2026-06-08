@@ -254,10 +254,14 @@ impl HintEngine {
             }
         }
 
-        // Flag completions — only when the user has started typing a flag.
-        // Never offer flags unprompted: the filesystem/ArgsType fallback handles
-        // the empty-prefix case so commands like `cd` show dirs, not --help.
-        if prefix.starts_with('-') {
+        // Show flags when:
+        //  - user has started typing a flag (prefix starts with '-'), OR
+        //  - the command has no subcommands (flags-only command like curl/grep)
+        //    and args type is not Directory/None (so cd still shows dirs).
+        let show_flags = prefix.starts_with('-')
+            || (spec.subcommands.is_empty() && out.is_empty()
+                && !matches!(spec.args, crate::completions::ArgsType::Directory | crate::completions::ArgsType::None));
+        if show_flags {
             for s in flag_suggestions(&spec, subcommand) {
                 if s.label.starts_with(prefix) {
                     out.push(CompletionEntry {

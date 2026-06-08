@@ -107,6 +107,7 @@ impl CompletionRegistry {
         self.specs.get(command)
     }
 
+
     /// Reload all specs from disk (called after completion-gen writes a new file).
     pub fn reload(&mut self) {
         self.specs.clear();
@@ -137,22 +138,26 @@ fn bundled_dir() -> Option<PathBuf> {
         if pb.is_dir() { return Some(pb); }
     }
 
-    let exe = std::env::current_exe().ok()?;
+    // current_exe on macOS can return a symlink inside /private; canonicalize it.
+    let exe = std::env::current_exe().ok()
+        .and_then(|p| p.canonicalize().ok().or(Some(p)))?;
     let exe_dir = exe.parent()?;
-    // Check in order:
-    //   1. Next to binary (Linux/generic install)
-    //   2. macOS app bundle: Contents/MacOS/../Resources/completions
-    //   3. Linux share dir
-    //   4. Dev builds: target/debug or target/release → workspace root
-    //   5. target/debug/deps → workspace root
+
     let candidates = [
-        exe_dir.join("completions"),
-        exe_dir.join("../Resources/completions"),          // macOS .app bundle
-        exe_dir.join("../share/rusty/completions"),
-        exe_dir.join("../..").join("completions-toml"),    // target/{debug,release} → workspace root
-        exe_dir.join("../../..").join("completions-toml"), // target/debug/deps → workspace root
+        exe_dir.join("completions"),                           // next to binary
+        exe_dir.join("../Resources/completions"),              // macOS .app bundle
+        exe_dir.join("../share/rusty/completions"),            // Linux install
+        exe_dir.join("../..").join("completions-toml"),        // target/{debug,release}
+        exe_dir.join("../../..").join("completions-toml"),     // target/debug/deps
     ];
-    candidates.into_iter().find(|p| p.is_dir())
+    for p in &candidates {
+        if let Ok(canon) = p.canonicalize() {
+            if canon.is_dir() {
+                return Some(canon);
+            }
+        }
+    }
+    None
 }
 
 // ── Flat suggestion list from a spec ─────────────────────────────────────────
