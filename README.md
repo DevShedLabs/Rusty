@@ -254,47 +254,9 @@ cargo check -p rusty-hint
 
 ### Structured command completion
 
-Tab completions are powered by three layered sources, tried in order:
+Tab completions are driven by declarative TOML spec files — no code required for most commands. Bundled specs cover `git`, `grep`, `docker`, `npm`, `ansible`, `cd`, and more. Drop a `.toml` in `~/.config/rusty/completions/` to add completions for any tool without rebuilding.
 
-1. **TOML spec files** — bundled definitions for common commands (`git`, `grep`, …) plus user files in `~/.config/rusty/completions/`. Subcommands, flags, descriptions, and value hints — all declarative, no code.
-2. **`--help` auto-parser** — for any command without a spec file, rusty runs `<cmd> --help` once per session, extracts flags and descriptions via regex, and caches the result.
-3. **Filesystem fallback** — files and directories in CWD.
-
-**Writing a TOML completion spec** (`~/.config/rusty/completions/cargo.toml`):
-
-```toml
-command     = "cargo"
-description = "Rust package manager"
-
-[[flags]]
-long        = "verbose"
-short       = "v"
-description = "Use verbose output"
-
-[[subcommands]]
-name        = "build"
-description = "Compile the current package"
-
-[[subcommands.flags]]
-long        = "release"
-description = "Build with optimizations"
-
-[[subcommands.flags]]
-long        = "target"
-description = "Cross-compile for the target triple"
-takes_value = true
-value_hint  = "triple"
-
-[[subcommands]]
-name        = "test"
-description = "Run the test suite"
-
-[[subcommands.flags]]
-long        = "nocapture"
-description = "Show stdout from passing tests"
-```
-
-Bundled specs live in `completions-toml/` in the repo. User files in `~/.config/rusty/completions/` override bundled ones. Drop a `.toml` there for any tool your team uses — `kubectl`, `gh`, internal CLIs — no rebuild needed.
+See **[docs/completions.md](docs/completions.md)** for the full schema reference, popup key bindings, and how to write your own specs.
 
 ### Medium-term
 
