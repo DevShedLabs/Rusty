@@ -1,0 +1,78 @@
+command     = "go"
+
+[[subcommands]]
+name        = "bug"
+description = "start a bug report"
+
+[[subcommands]]
+name        = "build"
+description = "compile packages and dependencies"
+
+[[subcommands]]
+name        = "clean"
+description = "remove object files and cached files"
+
+[[subcommands]]
+name        = "doc"
+description = "show documentation for package or symbol"
+
+[[subcommands]]
+name        = "env"
+description = "print Go environment information"
+
+[[subcommands]]
+name        = "fix"
+description = "apply fixes suggested by static checkers"
+
+[[subcommands]]
+name        = "fmt"
+description = "gofmt (reformat) package sources"
+
+[[subcommands]]
+name        = "generate"
+description = "generate Go files by processing source"
+
+[[subcommands]]
+name        = "get"
+description = "add dependencies to current module and install them"
+
+[[subcommands]]
+name        = "install"
+description = "compile and install packages and dependencies"
+
+[[subcommands]]
+name        = "list"
+description = "list packages or modules"
+
+[[subcommands]]
+name        = "mod"
+description = "module maintenance"
+
+[[subcommands]]
+name        = "work"
+description = "workspace maintenance"
+
+[[subcommands]]
+name        = "run"
+description = "compile and run Go program"
+
+[[subcommands]]
+name        = "telemetry"
+description = "manage telemetry data and settings"
+
+[[subcommands]]
+name        = "test"
+description = "test packages"
+
+[[subcommands]]
+name        = "tool"
+description = "run specified go tool"
+
+[[subcommands]]
+name        = "version"
+description = "print Go version"
+
+[[subcommands]]
+name        = "vet"
+description = "report likely mistakes in packages"
+

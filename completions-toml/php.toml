@@ -1,0 +1,112 @@
+command     = "php"
+
+[[flags]]
+short       = "a"
+description = "Run as interactive shell (requires readline extension)"
+
+[[flags]]
+short       = "c"
+
+[[flags]]
+short       = "n"
+description = "No configuration (ini) files will be used"
+
+[[flags]]
+short       = "d"
+description = "Define INI entry foo with value 'bar'"
+
+[[flags]]
+short       = "e"
+description = "Generate extended information for debugger/profiler"
+
+[[flags]]
+short       = "f"
+description = "Parse and execute <file>."
+
+[[flags]]
+short       = "h"
+description = "This help"
+
+[[flags]]
+short       = "i"
+description = "PHP information"
+
+[[flags]]
+short       = "l"
+description = "Syntax check only (lint)"
+
+[[flags]]
+short       = "m"
+description = "Show compiled in modules"
+
+[[flags]]
+short       = "r"
+description = "Run PHP <code> without using script tags <?..?>"
+
+[[flags]]
+short       = "B"
+description = "Run PHP <begin_code> before processing input lines"
+
+[[flags]]
+short       = "R"
+description = "Run PHP <code> for every input line"
+
+[[flags]]
+short       = "F"
+description = "Parse and execute <file> for every input line"
+
+[[flags]]
+short       = "E"
+description = "Run PHP <end_code> after processing all input lines"
+
+[[flags]]
+short       = "H"
+description = "Hide any passed arguments from external tools."
+
+[[flags]]
+short       = "S"
+
+[[flags]]
+short       = "t"
+description = "Specify document root <docroot> for built-in web server."
+
+[[flags]]
+short       = "s"
+description = "Output HTML syntax highlighted source."
+
+[[flags]]
+short       = "v"
+description = "Version number"
+
+[[flags]]
+short       = "w"
+description = "Output source with stripped comments and whitespace."
+
+[[flags]]
+short       = "z"
+description = "Load Zend extension <file>."
+
+[[flags]]
+long        = "ini"
+description = "Show configuration file names"
+
+[[flags]]
+long        = "rf"
+description = "Show information about function <name>."
+
+[[flags]]
+long        = "rc"
+description = "Show information about class <name>."
+
+[[flags]]
+long        = "re"
+description = "Show information about extension <name>."
+
+[[flags]]
+long        = "rz"
+description = "Show information about Zend extension <name>."
+
+[[flags]]
+long        = "ri"
+description = "Show configuration for extension <name>."
+

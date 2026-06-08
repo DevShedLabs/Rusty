@@ -43,9 +43,36 @@ pub fn spec_from_help(command: &str) -> Option<CommandSpec> {
 
 // ── Runner ────────────────────────────────────────────────────────────────────
 
+/// Return a PATH that includes common tool locations missing from the macOS
+/// app-bundle launch environment.
+fn augmented_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let extras = [
+        "/usr/local/bin",
+        "/usr/local/go/bin",
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/sbin",
+        "/opt/local/bin",   // MacPorts
+        "/nix/var/nix/profiles/default/bin",
+    ];
+    let mut parts: Vec<&str> = current.split(':').filter(|s| !s.is_empty()).collect();
+    for e in &extras {
+        if !parts.contains(e) {
+            parts.push(e);
+        }
+    }
+    parts.join(":")
+}
+
 fn run_help(command: &str) -> Option<String> {
     use std::process::Stdio;
     use std::time::Duration;
+
+    // When launched from the macOS app bundle the inherited PATH is minimal
+    // (/usr/bin:/bin:/usr/sbin:/sbin). Augment it so tools installed via
+    // Homebrew (/usr/local/bin), nix, etc. are reachable.
+    let path = augmented_path();
 
     for flag in ["--help", "-h"] {
         // Fully detach from the PTY: null stdin so programs that invoke a
@@ -56,6 +83,7 @@ fn run_help(command: &str) -> Option<String> {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .env("PATH", &path)
             // Some programs (git) respect NO_PAGER / GIT_TERMINAL_PROMPT.
             .env("GIT_PAGER", "cat")
             .env("PAGER", "cat")
@@ -114,12 +142,16 @@ fn parse_help_output(command: &str, text: &str) -> CommandSpec {
     let mut section = Section::Other;
 
     for line in text.lines() {
-        // Detect section headers.
+        // Detect section headers like "Commands:", "Available Commands:",
+        // "The commands are:", "SUBCOMMANDS", etc.
+        // Must end with ':' or be an all-caps bare word, and contain "command" or "subcommand".
         let trimmed_lower = line.trim().to_lowercase();
-        if trimmed_lower.starts_with("available commands")
-            || trimmed_lower.starts_with("commands")
-            || trimmed_lower.starts_with("subcommands")
-        {
+        let is_section_header = {
+            let t = trimmed_lower.trim_end_matches(':');
+            (t.contains("command") || t.contains("subcommand"))
+                && (trimmed_lower.ends_with(':') || line.trim().chars().all(|c| c.is_uppercase() || c == ' '))
+        };
+        if is_section_header {
             section = Section::Commands;
             continue;
         }

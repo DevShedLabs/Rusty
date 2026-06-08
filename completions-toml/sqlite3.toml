@@ -1,0 +1,86 @@
+command     = "sqlite3"
+
+[[flags]]
+short       = "A"
+description = "run \".archive ARGS\" and exit"
+
+[[flags]]
+short       = "a"
+description = "append the database to the end of the file"
+
+[[flags]]
+short       = "b"
+description = "stop after hitting an error"
+
+[[flags]]
+short       = "c"
+description = "set output mode to 'column'"
+
+[[flags]]
+short       = "d"
+description = "open the database using sqlite3_deserialize()"
+
+[[flags]]
+short       = "e"
+description = "print inputs before execution"
+
+[[flags]]
+short       = "i"
+description = "read/process named file"
+
+[[flags]]
+short       = "h"
+description = "show this message"
+
+[[flags]]
+short       = "k"
+description = "raw encryption key"
+
+[[flags]]
+short       = "j"
+description = "set output mode to 'json'"
+
+[[flags]]
+short       = "l"
+description = "set output mode to 'line'"
+
+[[flags]]
+short       = "m"
+description = "set output mode to 'markdown'"
+
+[[flags]]
+short       = "n"
+description = "set output row separator. Default: '\\n'"
+
+[[flags]]
+short       = "p"
+description = "use N slots of SZ bytes each for page cache memory"
+
+[[flags]]
+short       = "q"
+description = "set output mode to 'quote'"
+
+[[flags]]
+short       = "r"
+description = "open the database read-only"
+
+[[flags]]
+short       = "s"
+description = "enable safe-mode"
+
+[[flags]]
+short       = "t"
+description = "text to be hashed into the encryption key"
+
+[[flags]]
+short       = "u"
+description = "allow unsafe commands and modes for testing"
+
+[[flags]]
+short       = "v"
+description = "show SQLite version"
+
+[[flags]]
+short       = "z"
+description = "open the file as a ZIP Archive"
+

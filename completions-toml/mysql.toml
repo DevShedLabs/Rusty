@@ -1,0 +1,551 @@
+command     = "mysql"
+
+[[flags]]
+long        = "help"
+description = "Display this help and exit."
+
+[[flags]]
+long        = "auto-rehash"
+description = "Enable automatic rehashing. One doesn't need to use"
+
+[[flags]]
+long        = "disable-auto-rehash."
+
+[[flags]]
+long        = "no-auto-rehash"
+short       = "A"
+
+[[flags]]
+long        = "auto-vertical-output"
+
+[[flags]]
+long        = "batch"
+short       = "B"
+description = "Don't use history file. Disable interactive behavior."
+
+[[flags]]
+long        = "bind-address"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "binary-as-hex"
+description = "Print binary data as hex. Enabled by default for"
+
+[[flags]]
+long        = "character-sets-dir"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "column-type-info"
+description = "Display column type information."
+
+[[flags]]
+long        = "commands"
+description = "Enable or disable processing of local mysql commands."
+
+[[flags]]
+long        = "comments"
+short       = "c"
+description = "Preserve comments. Send comments to the server. The"
+
+[[flags]]
+long        = "skip-comments."
+
+[[flags]]
+long        = "compress"
+short       = "C"
+description = "Use compression in server/client protocol."
+
+[[flags]]
+long        = "debug["
+description = "This is a non-debug version. Catch this and exit."
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "debug-check"
+description = "This is a non-debug version. Catch this and exit."
+
+[[flags]]
+long        = "debug-info"
+short       = "T"
+description = "This is a non-debug version. Catch this and exit."
+
+[[flags]]
+long        = "database"
+short       = "D"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "default-character-set"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "delimiter"
+description = "Delimiter to be used."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "enable-cleartext-plugin"
+
+[[flags]]
+long        = "execute"
+short       = "e"
+description = "Execute command and quit. (Disables --force and history"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "vertical"
+short       = "E"
+description = "Print the output of a query (rows) vertically."
+
+[[flags]]
+long        = "force"
+short       = "f"
+description = "Continue even if we get an SQL error."
+
+[[flags]]
+long        = "histignore"
+description = "A colon-separated list of patterns to keep statements"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "named-commands"
+short       = "G"
+
+[[flags]]
+long        = "ignore-spaces"
+short       = "i"
+
+[[flags]]
+long        = "init-command"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "init-command-add"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "local-infile"
+description = "Enable/disable LOAD DATA LOCAL INFILE."
+
+[[flags]]
+long        = "no-beep"
+short       = "b"
+description = "Turn off beep on error."
+
+[[flags]]
+long        = "host"
+short       = "h"
+description = "Connect to host."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "dns-srv-name"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "html"
+short       = "H"
+description = "Produce HTML output."
+
+[[flags]]
+long        = "xml"
+short       = "X"
+description = "Produce XML output."
+
+[[flags]]
+long        = "line-numbers"
+description = "Write line numbers for errors."
+
+[[flags]]
+long        = "skip-line-numbers"
+short       = "L"
+
+[[flags]]
+long        = "unbuffered"
+short       = "n"
+description = "Flush buffer after each query."
+
+[[flags]]
+long        = "column-names"
+description = "Write column names in results."
+
+[[flags]]
+long        = "skip-column-names"
+short       = "N"
+
+[[flags]]
+long        = "sigint-ignore"
+description = "Ignore SIGINT (CTRL-C)."
+
+[[flags]]
+long        = "one-database"
+short       = "o"
+description = "Ignore statements except those that occur while the"
+
+[[flags]]
+long        = "pager["
+description = "Pager to use to display results. If you don't supply an"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "password["
+short       = "p"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "password1["
+short       = ""
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "password2["
+short       = ""
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "password3["
+short       = ""
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "port"
+short       = "P"
+description = "Port number to use for connection or 0 for default to, in"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "prompt"
+description = "Set the mysql prompt to this value."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "protocol"
+description = "The protocol to use for connection (tcp, socket, pipe,"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "quick"
+short       = "q"
+description = "Don't cache result, print it row by row. This may slow"
+
+[[flags]]
+long        = "raw"
+short       = "r"
+description = "Write fields without conversion. Used with --batch."
+
+[[flags]]
+long        = "reconnect"
+description = "Reconnect if the connection is lost. Disable with"
+
+[[flags]]
+long        = "disable-reconnect."
+
+[[flags]]
+long        = "silent"
+short       = "s"
+description = "Be more silent. Print results with a tab as separator,"
+
+[[flags]]
+long        = "socket"
+short       = "S"
+description = "The socket file to use for connection."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "server-public-key-path"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "get-server-public-key"
+
+[[flags]]
+long        = "ssl-mode"
+description = "SSL connection mode."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-ca"
+description = "CA file in PEM format."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-capath"
+description = "CA directory."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-cert"
+description = "X509 cert in PEM format."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-cipher"
+description = "SSL cipher to use."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-key"
+description = "X509 key in PEM format."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-crl"
+description = "Certificate revocation list."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-crlpath"
+description = "Certificate revocation list path."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "tls-version"
+description = "TLS version to use, permitted values are: TLSv1.2,"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-fips-mode"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "tls-ciphersuites"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-session-data"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "ssl-session-data-continue-on-failed-reuse"
+
+[[flags]]
+long        = "tls-sni-servername"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "table"
+short       = "t"
+description = "Output in table format."
+
+[[flags]]
+long        = "tee"
+description = "Append everything into outfile. See interactive help (\\h)"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "disable-tee."
+
+[[flags]]
+long        = "user"
+short       = "u"
+description = "User for login if not current user."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "safe-updates"
+short       = "U"
+description = "Only allow UPDATE and DELETE that uses keys."
+
+[[flags]]
+long        = "i-am-a-dummy"
+short       = "U"
+description = "Synonym for option --safe-updates, -U."
+
+[[flags]]
+long        = "verbose"
+short       = "v"
+description = "Write more. (-v -v -v gives the table output format)."
+
+[[flags]]
+long        = "version"
+short       = "V"
+description = "Output version information and exit."
+
+[[flags]]
+long        = "wait"
+short       = "w"
+description = "Wait and retry if connection is down."
+
+[[flags]]
+long        = "connect-timeout"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "max-allowed-packet"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "net-buffer-length"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "select-limit"
+description = "Automatic limit for SELECT when using --safe-updates."
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "max-join-size"
+description = "Automatic limit for rows in a join when using"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "safe-updates."
+
+[[flags]]
+long        = "show-warnings"
+description = "Show warnings after every statement."
+
+[[flags]]
+long        = "syslog"
+short       = "j"
+description = "Log filtered interactive commands to syslog. Filtering of"
+
+[[flags]]
+long        = "plugin-dir"
+description = "Directory for client-side plugins."
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "default-auth"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "binary-mode"
+description = "By default, ASCII '\\0' is disallowed and '\\r\\n' is"
+
+[[flags]]
+long        = "connect-expired-password"
+
+[[flags]]
+long        = "compression-algorithms"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "zstd-compression-level"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "load-data-local-dir"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "authentication-oci-client-config-profile"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "oci-config-file"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "authentication-openid-connect-client-id-token-file"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "telemetry-client"
+description = "Load the telemetry_client plugin."
+
+[[flags]]
+long        = "plugin-authentication-webauthn-client-preserve-privacy"
+
+[[flags]]
+long        = "plugin-authentication-webauthn-device"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "register-factor"
+takes_value = true
+value_hint  = "name"
+
+[[flags]]
+long        = "system-command"
+description = "Enable or disable (by default) the 'system' mysql"
+
+[[flags]]
+long        = "print-defaults"
+description = "Print the program argument list and exit."
+
+[[flags]]
+long        = "no-defaults"
+description = "Don't read default options from any option file,"
+
+[[flags]]
+long        = "defaults-file"
+description = "Only read default options from the given file #."
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "defaults-extra-file"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "defaults-group-suffix"
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "login-path"
+description = "Read this path from the login file."
+takes_value = true
+value_hint  = "#"
+
+[[flags]]
+long        = "no-login-paths"
+description = "Don't read login paths from the login path file."
+
+[[flags]]
+long        = "-----------------"
+

@@ -1,0 +1,91 @@
+command     = "python"
+
+[[flags]]
+short       = "b"
+description = ": issue warnings about converting bytes/bytearray to str and comparing"
+
+[[flags]]
+short       = "B"
+description = ": don't write .pyc files on import; also PYTHONDONTWRITEBYTECODE=x"
+
+[[flags]]
+short       = "c"
+
+[[flags]]
+short       = "d"
+description = ": turn on parser debugging output (for experts only, only works on"
+
+[[flags]]
+short       = "E"
+description = ": ignore PYTHON* environment variables (such as PYTHONPATH)"
+
+[[flags]]
+short       = "h"
+description = ": print this help message and exit (also -? or --help)"
+
+[[flags]]
+short       = "i"
+description = ": inspect interactively after running script; forces a prompt even"
+
+[[flags]]
+short       = "I"
+description = ": isolate Python from the user's environment (implies -E, -P and -s)"
+
+[[flags]]
+short       = "m"
+
+[[flags]]
+short       = "O"
+description = ": remove assert and __debug__-dependent statements; add .opt-1 before"
+
+[[flags]]
+short       = "P"
+description = ": don't prepend a potentially unsafe path to sys.path; also"
+
+[[flags]]
+short       = "q"
+description = ": don't print version and copyright messages on interactive startup"
+
+[[flags]]
+short       = "s"
+description = ": don't add user site directory to sys.path; also PYTHONNOUSERSITE=x"
+
+[[flags]]
+short       = "S"
+description = ": don't imply 'import site' on initialization"
+
+[[flags]]
+short       = "u"
+description = ": force the stdout and stderr streams to be unbuffered;"
+
+[[flags]]
+short       = "v"
+description = ": verbose (trace import statements); also PYTHONVERBOSE=x"
+
+[[flags]]
+short       = "V"
+description = ": print the Python version number and exit (also --version)"
+
+[[flags]]
+short       = "W"
+
+[[flags]]
+short       = "x"
+description = ": skip first line of source, allowing use of non-Unix forms of #!cmd"
+
+[[flags]]
+short       = "X"
+
+[[flags]]
+long        = "check-hash-based-pycs"
+
+[[flags]]
+long        = "help-env:"
+
+[[flags]]
+long        = "help-xoptions:"
+short       = "X"
+
+[[flags]]
+long        = "help-all:"
+
