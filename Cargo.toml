@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.8"
+version = "0.1.9"
 
 # Shared dependency versions — override per-crate only when necessary.
 [workspace.dependencies]
